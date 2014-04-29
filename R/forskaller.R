@@ -148,6 +148,17 @@ simplifyMeasurement <- function(measurement){
     list(type=measurement$type, data=sr)
 }
 
+#' subsets but is lenient about missing columns
+#' missing columns are ignored
+#' @param df the data frame to subset by columns
+#' @param cols string vector of columns to subset in desired order
+#'
+subsetF <- function(df, cols){
+   coli <- match(cols, colnames(df))
+   colp <- coli[!is.na(coli)]
+   dfp <- df[,colp]
+   dfp
+}
 
 
 #' simplifies preparation data.frame
@@ -156,7 +167,7 @@ simplifyMeasurement <- function(measurement){
 #'      0 11344 Data Entry Preparation Carmen Czepe  16864     12      1   NA        0     200-800 2014-02-24 14:00:36   Ok Carmen Czepe 2014-02-26 16:28:39     1182   sample        0 NEB ultra RNA  beads    1391
 #'
 simplifyPreparation <- function(preparation){
- subset(preparation, select=c(id, obj_id, batchId, multi_id, cycles, udgase, cutout_size, flag, user, kit, method))  
+ subsetF(preparation, c("id", "obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method"))  
 }
 
 
@@ -191,7 +202,7 @@ simplifySample <- function(sample){
 #       0  618 8.6     1182   sample 2014-02-20 15:23:32   NA        0 2014-02-21 15:14:57 Carmen Czepe   Ok Data Entry RNA Quantification        0 11278  16864 Carmen Czepe    1376
 #'
 simplifyRNAQuantification <- function(quantification){
-  subset(quantification, select=c(id, obj_id, batchId, multi_id, conc, rin, flag, user))
+  subsetF(quantification, c("id", "obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user"))
 }
 
 #' simplify size analysis data.frame
@@ -199,7 +210,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subset(sizeanalysis, select=c(id, obj_id, batchId, multi_id, dilution, size, conc, flag, kit, method, user)) 
+  subsetF(sizeanalysis, c("id", "obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user")) 
 }
 
 
@@ -208,7 +219,7 @@ simplifySizeAnalysis <- function(sizeanalysis){
 #'   resolved size efficiency  kit conc multi_id obj_type X2nM_control corrected_conc notified machine text                date flag change_user         change_date severity    id       type form obj_id     user R2 batchId
 #'         0  270       96.9 Kapa  2.9     1182   sample         2.24           4.85        0    ours      2014-03-03 11:44:00   Ok    Ru Huang 2014-03-03 11:47:20        0 11478 Data Entry qPCR  16864 Ru Huang  1    1437 
 simplifyQPCR <- function(qpcr){
-  subset(qpcr, select=c(id, obj_id, batchId, multi_id, size, efficiency, conc, corrected_conc, kit, flag, user))
+  subsetF(qpcr, c("id", "obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user"))
 }
 
 
