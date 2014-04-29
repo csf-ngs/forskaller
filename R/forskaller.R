@@ -1,3 +1,4 @@
+require("plyr")
 require("RCurl")
 require("rjson")
 require("Hmisc")
@@ -124,10 +125,13 @@ getSamples <- function(sampleIds, session){
         meas <- Map(function(s){ s$measurements }, samples)
         ms <- Filter(function(m){ m$type == type }, unlist(meas, recursive=FALSE))
         dat <- do.call("rbind", Map(function(m){ m$data }, ms))
+        dato <- dat[order(dat$sampleId),] 
+        
         list(type=type, data=dat)
    })    
+   sampleso <- samplesDF[order(samplesDF$id),]
 
-   list(samples=samplesDF, measurements=measurements)
+   list(samples=sampleso, measurements=measurements)
 }
 
 
@@ -142,7 +146,8 @@ simplifyMeasurement <- function(measurement){
         'qPCR'=simplifyQPCR(measurement$data),
         'RNA Quantification'=simplifyRNAQuantification(measurement$data)
     )
-    list(type=measurement$type, data=simple)
+    sr <- rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
+    list(type=measurement$type, data=sr)
 }
 
 
