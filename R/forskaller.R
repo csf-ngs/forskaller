@@ -69,7 +69,7 @@ removeFromList <- function(lis, re){
 #' gets sample information from forskalle
 #' @param sampleId the sample id 
 #' @param session the forskalle session
-#' @param should measurment columns be simplified  
+#' @param should measurement columns be simplified  
 #'
 #' returns a list of
 #' sample = data frame with sample info (1 row)
@@ -101,6 +101,36 @@ getSample <- function(sampleId, session, simplify=FALSE){
 
 }
 
+#' gets samples as list of data frames
+#' 
+#' @param sampleIds vector of sample ids
+#' @param session the forskalle session
+#'  
+#' returns a list of data frames
+#' samples
+#' for each measurement type a data frame
+#' all data frames are simplified (as in getSample)
+#'
+#' @export
+getSamples <- function(sampleIds, session){
+   samples <- lapply(sampleIds, getSample, session, TRUE)
+   samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sa }))
+   measurementTypesM <- sapply(samples, function(s){  
+      sapply(s$measurements, function(m){ m$type })
+   })
+   measurementTypes <- unique(as.vector(measurementTypesM))
+
+   measurements <- lapply(measurementTypes, function(type){
+        meas <- Map(function(s){ s$measurements }, samples)
+        ms <- Filter(function(m){ m$type == type }, unlist(meas, recursive=FALSE))
+        dat <- do.call("rbind", Map(function(m){ m$data }, ms))
+        list(type=type, data=dat)
+   })    
+
+   list(samples=samplesDF, measurements=measurements)
+}
+
+
 #' selects specific columns from measurement
 #' @param measurment (list type=type, data=data)
 #'
@@ -112,6 +142,7 @@ simplifyMeasurement <- function(measurement){
         'qPCR'=simplifyQPCR(measurement$data),
         'RNA Quantification'=simplifyRNAQuantification(measurement$data)
     )
+    list(type=measurement$type, data=simple)
 }
 
 
@@ -165,7 +196,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subset(sizeanalysis, select=c(id, obj_id, batchId, multi_id, dilution, size, conc, flag, kit, conc, method, user)) 
+  subset(sizeanalysis, select=c(id, obj_id, batchId, multi_id, dilution, size, conc, flag, kit, method, user)) 
 }
 
 
@@ -176,6 +207,8 @@ simplifySizeAnalysis <- function(sizeanalysis){
 simplifyQPCR <- function(qpcr){
   subset(qpcr, select=c(id, obj_id, batchId, multi_id, size, efficiency, conc, corrected_conc, kit, flag, user))
 }
+
+
 
 
 

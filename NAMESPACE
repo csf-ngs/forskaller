@@ -1,5 +1,6 @@
 export(createCredentials)
 export(endSession)
 export(getSample)
+export(getSamples)
 export(simplifyMeasurement)
 export(startSession)
