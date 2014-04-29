@@ -126,17 +126,15 @@ getSamples <- function(sampleIds, session){
         ms <- Filter(function(m){ m$type == type }, unlist(meas, recursive=FALSE))
         dat <- do.call("rbind", Map(function(m){ m$data }, ms))
         dato <- dat[order(dat$sampleId),] 
-        
-        list(type=type, data=dat)
-   })    
+        dato
+   })
+   names(measurements) <- measurementTypes    
    sampleso <- samplesDF[order(samplesDF$id),]
-
    list(samples=sampleso, measurements=measurements)
 }
 
-
 #' selects specific columns from measurement
-#' @param measurment (list type=type, data=data)
+#' @param measurement (list type=type, data=data)
 #'
 #' @export
 simplifyMeasurement <- function(measurement){
