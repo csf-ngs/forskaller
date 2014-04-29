@@ -58,7 +58,7 @@ measurementToDF <- function(meas){
   mf <- meas[-ci]
   mf$batchId <- batchId
   mfn <- nullToNA(mf)
-  list(type=mfn$form, data=as.data.frame(mfn))
+  list(type=mfn$form, data=as.data.frame(mfn, stringsAsFactors=FALSE))
 }
 
 removeFromList <- function(lis, re){
@@ -87,7 +87,7 @@ getSample <- function(sampleId, session, simplify=FALSE){
   # must replace null with NA
   sjln <- nullToNA(sjl)
   
-  sampleDF <- as.data.frame(sjln)
+  sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
   
   m <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session) ## its a string    
   mj <- fromJSON(m)
@@ -149,15 +149,25 @@ simplifyMeasurement <- function(measurement){
 }
 
 #' subsets but is lenient about missing columns
-#' missing columns are ignored
+#' missing columns are set to NA
 #' @param df the data frame to subset by columns
 #' @param cols string vector of columns to subset in desired order
 #'
 subsetF <- function(df, cols){
    coli <- match(cols, colnames(df))
    colp <- coli[!is.na(coli)]
+   missingColumns <- which(is.na(coli))
+   allColumns <- 1:length(cols)
    dfp <- df[,colp]
-   dfp
+   alldf <- NULL
+   nacol <- rep(NA, nrow(df))
+   dfi <- 0
+   for(ci in allColumns){
+     col <- if(ci %in% missingColumns){ nacol }else{ dfi = dfi + 1; dfp[,dfi] }
+     alldf <- cbind(alldf, col)
+   }
+   colnames(alldf) <- cols
+   data.frame(alldf)
 }
 
 
@@ -195,6 +205,7 @@ simplifySample <- function(sample){
   subs <- subset(sample, select=c(id, tag, preparation_type, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
   within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
 }
+
 
 #' simplify RNA Quantification data.frame
 #'
