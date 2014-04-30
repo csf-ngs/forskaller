@@ -88,14 +88,20 @@ getSample <- function(sampleId, session, simplify=FALSE){
   sjln <- nullToNA(sjl)
   
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
-  
+  sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
+  sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
+ 
   m <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session) ## its a string    
   mj <- fromJSON(m)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
      sm <- lapply(mea, simplifyMeasurement)     
      sa <- simplifySample(sampleDF)
-     list(sample=sa, measurements=sm)
+     #sample table is very long, split it somehow in lab/annotation
+     #"id"               "preparation_type" "cutout_size"      "shearing"         "fragmented"       "stranded"         "own_risk"         "add_primer"       "exptype"          "organism"         "genotype"         "celltype"         "antibody"         "descr"
+     sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer))
+     sampleAnnot <- subset(sa, select=c(id, exptype, organism, genotype, celltype, antibody, descr))
+     list(sample=sa, sampleLab=sampleLab, sampleAnnot=sampleAnnot, measurements=sm)
   }else{
      list(sample=sampleDF, measurements=mea) 
   }
@@ -115,7 +121,11 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #' @export
 getSamples <- function(sampleIds, session){
    samples <- lapply(sampleIds, getSample, session, TRUE)
-   samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sa }))
+   
+   samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sample }))
+   samplesADF <-  do.call("rbind", lapply(samples, function(s){ s$sampleAnnot }))
+   samplesLDF <-  do.call("rbind", lapply(samples, function(s){ s$sampleLab }))
+
    measurementTypesM <- sapply(samples, function(s){  
       sapply(s$measurements, function(m){ m$type })
    })
@@ -130,7 +140,10 @@ getSamples <- function(sampleIds, session){
    })
    names(measurements) <- measurementTypes    
    sampleso <- samplesDF[order(samplesDF$id),]
-   list(samples=sampleso, measurements=measurements)
+   samplesao <- samplesADF[order(samplesADF$id),]
+   sampleslo <- samplesLDF[order(samplesLDF$id),]
+
+   list(samples=sampleso, samplesAnnot=samplesao, samplesLab=sampleslo, measurements=measurements)
 }
 
 #' selects specific columns from measurement
@@ -177,7 +190,7 @@ subsetF <- function(df, cols){
 #'      0 11344 Data Entry Preparation Carmen Czepe  16864     12      1   NA        0     200-800 2014-02-24 14:00:36   Ok Carmen Czepe 2014-02-26 16:28:39     1182   sample        0 NEB ultra RNA  beads    1391
 #'
 simplifyPreparation <- function(preparation){
- subsetF(preparation, c("id", "obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method"))  
+ subsetF(preparation, c("obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method"))  
 }
 
 
@@ -202,7 +215,7 @@ simplifySample <- function(sample){
     }
     latexTranslate(tru)
   }
-  subs <- subset(sample, select=c(id, tag, preparation_type, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
+  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
   within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
 }
 
@@ -213,7 +226,7 @@ simplifySample <- function(sample){
 #       0  618 8.6     1182   sample 2014-02-20 15:23:32   NA        0 2014-02-21 15:14:57 Carmen Czepe   Ok Data Entry RNA Quantification        0 11278  16864 Carmen Czepe    1376
 #'
 simplifyRNAQuantification <- function(quantification){
-  subsetF(quantification, c("id", "obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user"))
+  subsetF(quantification, c("obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user"))
 }
 
 #' simplify size analysis data.frame
@@ -221,7 +234,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subsetF(sizeanalysis, c("id", "obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user")) 
+  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user")) 
 }
 
 
@@ -230,7 +243,7 @@ simplifySizeAnalysis <- function(sizeanalysis){
 #'   resolved size efficiency  kit conc multi_id obj_type X2nM_control corrected_conc notified machine text                date flag change_user         change_date severity    id       type form obj_id     user R2 batchId
 #'         0  270       96.9 Kapa  2.9     1182   sample         2.24           4.85        0    ours      2014-03-03 11:44:00   Ok    Ru Huang 2014-03-03 11:47:20        0 11478 Data Entry qPCR  16864 Ru Huang  1    1437 
 simplifyQPCR <- function(qpcr){
-  subsetF(qpcr, c("id", "obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user"))
+  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user"))
 }
 
 
