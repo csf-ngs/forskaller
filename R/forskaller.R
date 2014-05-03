@@ -25,7 +25,10 @@ startSession <- function(credentials){
   loginurl <- "http://ngs.csf.ac.at/forskalle/api/login"
   curl <- getCurlHandle()
   curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
-  loginResult <- postForm(loginurl, .params = credentials, curl=curl, .checkParams=FALSE )
+  tryCatch(
+    loginResult <- postForm(loginurl, .params = credentials, curl=curl, .checkParams=FALSE ),
+    error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())} 
+  )
   curl
 }
 
@@ -78,7 +81,10 @@ removeFromList <- function(lis, re){
 #'
 #' @export
 getSample <- function(sampleId, session, simplify=FALSE){
-  s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session) ## its a string
+  tryCatch(
+   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
+  )
   sj <- fromJSON(s) ## its a nested list
   sjl <- removeFromList(sj, "requests")
   logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
@@ -90,8 +96,10 @@ getSample <- function(sampleId, session, simplify=FALSE){
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
   sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
- 
-  m <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session) ## its a string    
+  tryCatch(
+     m <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session), ## its a string    
+     error=function(e){ cat(paste("error retrieving measurement info: ", sampleId, "\n", e), file=stderr()) }
+  )
   mj <- fromJSON(m)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
@@ -155,7 +163,9 @@ simplifyMeasurement <- function(measurement){
         'Preparation'=simplifyPreparation(measurement$data),
         'Size Analysis'=simplifySizeAnalysis(measurement$data),
         'qPCR'=simplifyQPCR(measurement$data),
-        'RNA Quantification'=simplifyRNAQuantification(measurement$data)
+        'RNA Quantification'=simplifyRNAQuantification(measurement$data),
+        'Quantification'=simplifyQuantification(measurement$data),
+         stop(paste("unknown measurement ", measurement$type))
     )
     sr <- rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
     list(type=measurement$type, data=sr)
@@ -246,7 +256,13 @@ simplifyQPCR <- function(qpcr){
   subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user"))
 }
 
-
-
+#' simplify Quantification (Chip-Seq)
+#'
+#'
+#'      user obj_type volume multi_id notified         change_date bioanalyzer_result obj_id           form resolved change_user  conc       type                date    id total text flag severity bioanalyzer_done batchId
+#'     Ru Huang   sample      9     1250        0 2014-03-04 12:52:36                 Ok  17853 Quantification        0    Ru Huang 10010 Data Entry 2014-03-04 11:10:39 11560 90.09   NA   Ok        0                1    1445
+simplifyQuantification <- function(quant){
+  subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user"))
+}
 
 
