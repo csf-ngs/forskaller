@@ -137,7 +137,7 @@ getSamples <- function(sampleIds, session){
    measurementTypesM <- sapply(samples, function(s){  
       sapply(s$measurements, function(m){ m$type })
    })
-   measurementTypes <- unique(as.vector(measurementTypesM))
+   measurementTypes <- unique(unlist(measurementTypesM))
 
    measurements <- lapply(measurementTypes, function(type){
         meas <- Map(function(s){ s$measurements }, samples)
