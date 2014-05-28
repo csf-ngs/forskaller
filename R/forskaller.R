@@ -185,7 +185,8 @@ getMultiplex <- function(multiId, session){
 compareMultiplex <- function(m1,m2){
 	m <- merge(m1, m2, by.x="tag", by.y="tag", all.x=TRUE, all.y=TRUE)
 	m$unique <- is.na(m$multiId.x) | is.na(m$multiId.y)	
-    m
+    mo <- m[order(m$sampleId.x, m$sampleId.y),]
+    mo
 }
 
 
