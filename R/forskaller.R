@@ -83,7 +83,8 @@ removeFromList <- function(lis, re){
 getSample <- function(sampleId, session, simplify=FALSE){
   tryCatch(
    s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
+   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) },
+   finally=return (NULL)
   )
   sj <- fromJSON(s) ## its a nested list
   sjl <- removeFromList(sj, "requests")
@@ -110,7 +111,7 @@ getSample <- function(sampleId, session, simplify=FALSE){
      sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer))
      sampleAnnot <- subset(sa, select=c(id, exptype, organism, genotype, celltype, antibody, descr))
      list(sample=sa, sampleLab=sampleLab, sampleAnnot=sampleAnnot, measurements=sm)
-  }else{
+  } else {
      list(sample=sampleDF, measurements=mea) 
   }
 
@@ -128,8 +129,10 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #'
 #' @export
 getSamples <- function(sampleIds, session){
-   samples <- lapply(sampleIds, getSample, session, TRUE)
-   
+   tryCatch(
+      samples <- lapply(sampleIds, getSample, session, TRUE),
+      finally=return (NULL)
+   )
    samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sample }))
    samplesADF <-  do.call("rbind", lapply(samples, function(s){ s$sampleAnnot }))
    samplesLDF <-  do.call("rbind", lapply(samples, function(s){ s$sampleLab }))
