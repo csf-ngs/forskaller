@@ -14,6 +14,3 @@ Depends:
     R (>= 3.0.0)
 License: GPLv3
 LazyData: true
-Collate:
-    'forskaller.R'
-    'forskaller-package.r'

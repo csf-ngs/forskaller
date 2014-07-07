@@ -3,6 +3,8 @@ require("RCurl")
 require("rjson")
 require("Hmisc")
 
+## http://ngs.csf.ac.at/forskalle/apidoc
+
 #' create credentials
 #' returns list username=username password=password
 #'
@@ -157,6 +159,40 @@ getSamples <- function(sampleIds, session){
    list(samples=sampleso, samplesAnnot=samplesao, samplesLab=sampleslo, measurements=measurements)
 }
 
+#' get one multiplex info
+#' 
+#' 
+#' data.frame(multiId, sampleId, tag, ratio)
+#'
+#' @param multiId the id  multiplex ids start with M TODO: could check this? 
+#'                        if no M then some other info comes up
+#' @param session the session
+#'
+#' @export
+getMultiplex <- function(multiId, session){
+   tryCatch(
+     multi <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/multiplexes/", multiId, sep=""), curl=session), ## its a string,
+     error=function(e){ cat(paste("error retrieving multiplex info: ", multiId, "\n", e), file=stderr()) }
+   )	
+   mj <- fromJSON(multi)
+   mjs <- mj$samples
+   sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
+   sb$multiId <- multiId
+   subset(sb,select=c(multiId,sampleId,tag,ratio)) 
+}
+
+#' compare 2 multiplexes by barcode
+#' 
+#'
+#' @export
+compareMultiplex <- function(m1,m2){
+	m <- merge(m1, m2, by.x="tag", by.y="tag", all.x=TRUE, all.y=TRUE)
+	m$unique <- is.na(m$multiId.x) | is.na(m$multiId.y)	
+    mo <- m[order(m$sampleId.x, m$sampleId.y),]
+    mo
+}
+
+
 #' selects specific columns from measurement
 #' @param measurement (list type=type, data=data)
 #'
@@ -267,5 +303,6 @@ simplifyQPCR <- function(qpcr){
 simplifyQuantification <- function(quant){
   subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user"))
 }
+
 
 
