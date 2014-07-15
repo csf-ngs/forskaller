@@ -83,11 +83,14 @@ removeFromList <- function(lis, re){
 #'
 #' @export
 getSample <- function(sampleId, session, simplify=FALSE){
+  s <- NULL
   tryCatch(
    s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) },
-   finally=return (NULL)
+   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
   )
+  if(is.null(s)){
+    return(s)
+  }
   sj <- fromJSON(s) ## its a nested list
   sjl <- removeFromList(sj, "requests")
   logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
@@ -131,10 +134,15 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #'
 #' @export
 getSamples <- function(sampleIds, session){
+   samples <- NULL
    tryCatch(
       samples <- lapply(sampleIds, getSample, session, TRUE),
-      finally=return (NULL)
+      error=function(e){ cat(paste("error retrieving samples info: ", sampleIds, "\n", e), file=stderr()) }             
    )
+   isNullS <- sapply(samples, function(s){ is.null(s) })
+   if(any(isNullS)){
+      return(NULL) 
+   }
    samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sample }))
    samplesADF <-  do.call("rbind", lapply(samples, function(s){ s$sampleAnnot }))
    samplesLDF <-  do.call("rbind", lapply(samples, function(s){ s$sampleLab }))
