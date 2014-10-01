@@ -212,7 +212,8 @@ simplifyMeasurement <- function(measurement){
         'qPCR'=simplifyQPCR(measurement$data),
         'RNA Quantification'=simplifyRNAQuantification(measurement$data),
         'Quantification'=simplifyQuantification(measurement$data),
-         stop(paste("unknown measurement ", measurement$type))
+        'cDNA Synthesis'=simplifyCDNASynthesis(measurement$data), 
+        stop(paste("unknown measurement ", measurement$type))
     )
     sr <- rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
     list(type=measurement$type, data=sr)
@@ -312,5 +313,11 @@ simplifyQuantification <- function(quant){
   subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user"))
 }
 
-
+#' simplify cDNA synthesis (RNA-Seq)
+#' 
+#'
+#'
+simplifyCDNASynthesis <- function(cdna){
+  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user"))
+}
 
