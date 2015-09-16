@@ -2,6 +2,7 @@ require("plyr")
 require("RCurl")
 require("rjson")
 require("Hmisc")
+require("httr")
 
 ## http://ngs.csf.ac.at/forskalle/apidoc
 
@@ -20,11 +21,13 @@ createCredentials <- function(username, password){
 #' the api is a little stateful
 #' you should call endSession at the end
 #' returns a forskalle session that subsequent interactions with forskalle need
+#'
+#' its: session <- startSession(createCredentials(
 #' 
 #' @param credentials list created with createCredentials
 #' @export
 startSession <- function(credentials){
-  loginurl <- "http://ngs.csf.ac.at/forskalle/api/login"
+  loginurl <- "http://ngs.csf.ac.at/lammskalle/api/login"
   curl <- getCurlHandle()
   curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
   tryCatch(
@@ -318,6 +321,72 @@ simplifyQuantification <- function(quant){
 #'
 #'
 simplifyCDNASynthesis <- function(cdna){
-  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user"))
+  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user", "ercc"))
 }
+
+#' get today formatted for forskalle
+#'
+today <- function(){
+  format(Sys.time(), "%Y-%m-%d")
+}
+
+#' create A sample
+#'
+#'
+#' @export
+createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, add_primer=0, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
+   li <- list(
+      description=description,
+      comments=comments,
+      group=group,
+      scientist=scientist,
+      celltype=celltype,
+      genotype=genotype,
+      exptype=exptype,
+      antibody=antibody,
+      organism=organism,
+      tissue_type=tissue_type,
+      status=status,
+      received=received,
+      fragmented=fragmented,
+      userprep=userprep,
+      preparation_kit=preparation_kit,
+      preparation_type=preparation_type,
+      own_risk=own_risk,
+      barcode=barcode,
+      secondary_tag=secondary_tag,
+      add_primer=add_primer,
+      cutout_size=cutout_size,
+      tagno=tagno,
+      secondary_tagno=secondary_tagno,
+      ready=ready,
+      primer=primer,
+      cutout_size_min=cutout_size_min,
+      cutout_size_max=cutout_size_max,
+      fragment_size=fragment_size,
+      requests={},
+      isNew=TRUE
+   )
+   li
+
+#{"secondary_tag":null,"status":"Aborted","exptype":"ChIP-Seq","obj_type":"sample","id":26038,"shearing":0,"genotype":"wildtype","descr":"SRR955859 Pol II ChIP resting B cells (Kouzine et al) rep1","group":"Pavri","requests":[],"add_primer":0,"cutout_size":"100-700","tagno":null,"celltype":"B cells","scientist":"Rushad Pavri","organism":"Mus musculus","fragmented":1,"userprep":"1","obj_id":26038,"preparation_kit":null,"preparation_type":"none","own_risk":0,"barcode":"Nextera","stranded":0,"received":"2015-02-23","ready":null,"comments":"SRR955859","tissue_type":"","primer":"Standard","cutout_size_min":"100","antibody":"Pol II","secondary_tagno":null,"cutout_size_max":"700","fragment_size":"","tag":"random"}
+
+}
+
+#' add sample to forskalle
+#' @param sample created with createSample
+#'
+#' @export
+addSample <- function(sample, session){
+    sampleJson <- toJSON(sample)
+    httpheader <- c(Accept="application/json; charset=UTF-8", "Content-Type"="application/json")
+    tryCatch(
+       addResult <- postForm("http://ngs.csf.ac.at/lammskalle/api/samples", curl=session, .opts=list(postfields=sampleJson))
+ ,
+       error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())}
+    )
+
+
+}
+
 
