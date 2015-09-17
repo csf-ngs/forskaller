@@ -385,8 +385,72 @@ addSample <- function(sample, session){
  ,
        error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())}
     )
-
-
 }
+ 
+#' turns one checkresults to a data frame
+#'
+#' @export
+checkResultsToDF <- function(checkResultsIndex, checkResultsList, sampleId){
+   checkResults <- checkResultsList[[checkResultsIndex]]
+   fp<- checkResults[[1]]
+   read2q30 <- NA
+# out of bounds but not necessary now
+   if(length(checkResults) > 1){
+      sr <- checkResults[[2]]
+      read2 <- sr$read
+      if(read2 == "1"){
+         fp <- sr
+         read2q30 <- checkResults[[1]]$countq30 
+      }else{
+         read2q30 <- sr$countq30
+      }
+   }
+   data.frame(sampleId=sampleId, basecallsNr=LETTERS[checkResultsIndex], flowcell=fp$flowcell, lane=fp$lane, basecalls=fp$basecalls, result=fp$result, total=fp$total, q30.1=fp$countq30, q30.2=read2q30)
+}
+
+#' get run info from forskalle
+#' 
+#' @export
+runsForSample <- function(sampleId, session){
+  s <- NULL
+  tryCatch(
+   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving run info for sample: ", sampleId, "\n", e), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its    
+  if(length(sj) > 0){
+  checkResults <- sj[[1]]$check_results
+  allChecks <- do.call("rbind", lapply(seq_along(checkResults), checkResultsToDF, checkResults, sampleId))
+  allChecks
+ }else{
+     data.frame(sampleId=sampleId, basecallsNr=NA, flowcell=NA, lane=NA, basecalls=NA, result=NA, total=NA, q30.1=NA, q30.2=NA)
+  }
+}
+
+
+
+#' get samples for user
+#'
+#' @export
+samplesForGroup <- function(groupName, session){
+  s <- NULL
+  tryCatch(
+   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples?group=", groupName, "&since=10-1", sep=""), curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving samples for group: ", groupName, "\n", e), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its
+  sapply(sj, function(s){ s$id })
+}
+
+
+
+
+
 
 
