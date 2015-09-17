@@ -76,6 +76,7 @@ removeFromList <- function(lis, re){
 
 
 #' gets sample information from forskalle
+#'
 #' @param sampleId the sample id 
 #' @param session the forskalle session
 #' @param should measurement columns be simplified  
