@@ -3,6 +3,8 @@ require("RCurl")
 require("rjson")
 require("Hmisc")
 require("httr")
+require("ggplot2")
+require("reshape2")
 
 ## http://ngs.csf.ac.at/forskalle/apidoc
 
@@ -448,6 +450,108 @@ samplesForGroup <- function(groupName, session){
   sj <- fromJSON(s) ## its
   sapply(sj, function(s){ s$id })
 }
+
+multiplexToDf <- function(multiplex){
+   samples <- multiplex$samples
+   mdf <- do.call("rbind", lapply(samples, function(s){
+     data.frame(id=s$sample$obj_id, barcode=s$sample$tag, ratio=as.numeric(s$ratio), stringsAsFactors=FALSE) 
+   }))
+   mdf
+}
+
+
+
+#' creates long data.frame from multiplex
+#'
+#' G/T = green laser
+#' A/C = red laser
+#'
+multiplexDfToLongWithBarcodes <- function(multiplexDF){
+   ddply(multiplexDF, .(id), function(s){
+      base <- strsplit(s$barcode, "")[[1]]
+      position <- seq_along(base)
+      laser <- ifelse(base == "A" | base == "C", "red", "green")
+      data.frame(id=s$id, base=base, position=position, laser=laser, ratio=s$ratio)
+   })
+}
+
+#' get multiplex 
+#'
+#'
+multiplexById <- function(multiplex, session){
+  s <- NULL
+  tryCatch(
+   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/multiplexes/", multiplex, sep=""), curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving multiplex: ", multiplex, "\n", e), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its
+  multiplexToDf(sj)
+}
+
+
+#' make barcode chart for multiplex
+#' 
+#' 
+#' 
+barcodeChartForLane <- function(multiplexLong){
+  ggplot(multiplexLong, aes(x=position, y=as.factor(id), fill=base)) + geom_tile() + ylab("sample id") + scale_fill_manual(values=c("A"="yellow1","C"="yellow2","G"="royalblue1","T"="royalblue2"))  
+}
+
+columnBaseCounts <- function(base, bases, counts){
+  sum(counts[base == bases])
+}
+
+# the X is in the database as XXXXXXX for not in top 100 barcode combinations
+baseCounts <- function(bases, counts){
+  nucs <- c("A","C","G","T","N","X")
+  nc <- lapply(nucs, columnBaseCounts, bases, counts)
+  names(nc) <- nucs
+  as.data.frame(nc)
+}
+
+allBaseCounts <- function(seqsDF, counts){
+  bcs <- apply(seqsDF, 2, baseCounts, counts)
+  bdf <- do.call("rbind", bcs) 
+  xSum <- sum(bdf$X)
+  if(xSum == 0){
+    bdf[,-ncol(bdf)]    
+  } else {
+    bdf
+  }
+}
+
+barcodeCountsToRatio <- function(path){
+   tab <- read.table(path, header=TRUE, sep="\t", as.is=TRUE)
+   seqs <- strsplit(tab[,1], "")
+   seqsDF <- do.call("rbind", seqs)
+   counts <- tab[,2]
+   basedf <- allBaseCounts(seqsDF, counts)
+   rs <- rowSums(basedf)
+   freqs <- basedf/rs
+   fdf <- data.frame(position=1:nrow(freqs), freqs) 
+   fdf
+}
+
+
+#' create from barcode a sequencelogo
+#'
+#'
+sequenceFreqs <- function(path){
+   fdf <- barcodeCountsToRatio(path) 
+   fdfl <- melt(fdf, id.vars="position")       
+   ggplot(fdfl, aes(x=factor(position),y=value, fill=variable)) + geom_bar(position="stack", stat="identity") + guides(fill=guide_legend("base")) + ylab("ratio") + xlab("index cycle") 
+}
+
+
+
+
+
+
+
+
 
 
 
