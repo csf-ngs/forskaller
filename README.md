@@ -1,7 +1,7 @@
 forskaller
 ==========
 
-small R API client for our superior in house LIMS
+small R API client for our superior in house LIMS built by Heinz
 
 install
 -------
