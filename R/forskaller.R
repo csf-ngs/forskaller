@@ -1,7 +1,7 @@
 require("plyr")
 require("RCurl")
 require("rjson")
-require("Hmisc")
+require("Hmisc") #latexTranslate
 require("httr")
 require("ggplot2")
 require("reshape2")
