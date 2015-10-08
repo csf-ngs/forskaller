@@ -5,9 +5,10 @@ small R API client for our superior in house LIMS
 
 install
 -------
+```R
 library("devtools")
 install_github("forskaller", "csf-ngs")
-
+```
 
 example usage
 -------------
