@@ -546,12 +546,57 @@ sequenceFreqs <- function(path){
 }
 
 
+#' get todays day for to for getRuns
+#
+getToday <- function(){
+   format(Sys.time(), "%Y-%m-%d")
+}
+
+#' convert flowcell to table row + list
+#'
+#'
+flowcellToTable <- function(run){
+  fc <- run$flowcell
+
+}
+
+#' get flowcell by id 
+#' @param id
+#'
+getFlowcellById <- function(id, session){
+  s <- NULL
+  query <- paste("http://ngs.csf.ac.at/forskalle/api/flowcells/", id, sep="")
+  tryCatch(
+   s <- getURLContent(query, curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving  flowcell ", id, "\n", e), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its a nested list
+
+}
 
 
 
-
-
-
+#' get flowcells  ?from=2014-09-02&to=2015-12-02
+#' @param from
+#' @param to
+#' from <- "2014-09-02"
+#'
+getFlowcells <- function(from="2014-09-02", to=getToday(), session){
+  s <- NULL
+  query <- paste("http://ngs.csf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
+  tryCatch(
+   s <- getURLContent(query, curl=session), ## its a string,
+   error=function(e){ cat(paste("error retrieving runs info ", from, "-", to, "\n", e), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its a nested list
+  
+}
 
 
 
