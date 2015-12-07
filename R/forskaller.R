@@ -547,18 +547,97 @@ sequenceFreqs <- function(path){
 
 
 #' get todays day for to for getRuns
-#
+#'
 getToday <- function(){
    format(Sys.time(), "%Y-%m-%d")
 }
 
+
+#' removes multiple elements from a list by names
+#'
+#'
+removeElementsFromList <- function(li, multinames){
+    indices <- which(names(li) %in% multinames)
+    li[-indices]
+}
+
+
 #' convert flowcell to table row + list
 #'
 #'
-flowcellToTable <- function(run){
-  fc <- run$flowcell
-
+flowcellToTable <- function(flowcell){
+   toRemove <- c("lanes", "problems")   
+   values <- removeElementsFromList(flowcell, toRemove) 
+   valO <- values[order(names(values))]
+   valO 
 }
+
+#' get tags length for sample 
+#'
+#' 
+getTagsForSample <- function(sample){
+   ss <- sample$request_sample$sample
+   barcode <- ss$barcode
+   ltag1 <- nchar(ss$tag)
+   if(is.null(ss$secondary_tag)){
+     ltag2 <- 0
+   } else {
+     ltag2 <- nchar(ss$secondary_tag)
+   }
+   scientist <- ss$scientist
+   data.frame(barcode=barcode, ltag1=ltag1, ltag2=ltag2, spikeIn=sample$is_spikein, scientist=scientist)
+}
+
+
+#' iterate through samples on lane and get length of tags
+#' lane$samples[[1]]$request_sample$sample
+#'
+getTagsForSamples <- function(samples){
+   do.call("rbind", lapply(samples, getTagsForSample))
+}
+
+simplifyTagsForLane <- function(tags){
+   ltag1 <- max(tags$ltag1)
+   ltag2 <- max(tags$ltag2)
+   hasSpikeIn <- any(tags$spikeIn > 0)
+   scientist <- unique(tags$scientist)
+   scientist <- if(length(scientist) > 1){ "multi" }else{ scientist }
+   data.frame(ltag1=ltag1, ltag2=ltag2, hasSpikeIn=spikeIn, scientist=scientist)
+}
+
+#' get simplified tags for lane
+#' 
+#'
+getTagsForLane <- function(lane){
+   laneNr <- lane[[1]]$num
+   tags <- getTagsForSamples(lane[[1]]$samples)
+   simp <- simplifyTagsForLane(tags)
+   data.frame(lane=laneNr, simp)
+}
+
+
+getTags <- function(lane){
+ #  laneNr <- lane$num
+ #  sampleCount <- lane$
+ #  hasSpikeIn <-
+ #  scientist <-
+ #  hasFirstIndex <-
+ #  hasSecondIndex <-
+}  
+
+## for each sample:
+#   barcode
+#   tag
+#   tagno
+#   secondary_tagno
+#   secondary_tag  
+#   exptype     
+ 
+#   samples[[1]]$request_sample$sample
+
+
+
+
 
 #' get flowcell by id 
 #' @param id
@@ -574,7 +653,6 @@ getFlowcellById <- function(id, session){
     return(s)
   }
   sj <- fromJSON(s) ## its a nested list
-
 }
 
 
