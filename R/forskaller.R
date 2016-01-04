@@ -4,6 +4,7 @@ require("rjson")
 require("Hmisc") #latexTranslate
 require("httr")
 
+##
 ## http://ngs.csf.ac.at/forskalle/apidoc
 
 #' create credentials
@@ -22,7 +23,7 @@ createCredentials <- function(username, password){
 #' you should call endSession at the end
 #' returns a forskalle session that subsequent interactions with forskalle need
 #'
-#' its: session <- startSession(createCredentials(
+#' its: session <- startSession(createCredentials(username, password))
 #' 
 #' @param credentials list created with createCredentials
 #' @export
