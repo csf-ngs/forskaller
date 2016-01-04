@@ -97,7 +97,8 @@ getSample <- function(sampleId, session, simplify=FALSE){
   }
   sj <- fromJSON(s) ## its a nested list
   sjl <- removeFromList(sj, "requests")
-  logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
+  #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
+  logicalColumns <- c("shearing", "own_risk", "fragmented", "stranded")
   logicalColumnsIndex <- names(sjl) %in% logicalColumns 
   sjl[logicalColumnsIndex] <- as.logical(sjl[logicalColumnsIndex])
   # must replace null with NA
@@ -117,7 +118,7 @@ getSample <- function(sampleId, session, simplify=FALSE){
      sa <- simplifySample(sampleDF)
      #sample table is very long, split it somehow in lab/annotation
      #"id"               "preparation_type" "cutout_size"      "shearing"         "fragmented"       "stranded"         "own_risk"         "add_primer"       "exptype"          "organism"         "genotype"         "celltype"         "antibody"         "descr"
-     sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer))
+     sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk))#, add_primer))
      sampleAnnot <- subset(sa, select=c(id, exptype, organism, genotype, celltype, antibody, descr))
      list(sample=sa, sampleLab=sampleLab, sampleAnnot=sampleAnnot, measurements=sm)
   } else {
@@ -277,7 +278,8 @@ simplifySample <- function(sample){
     }
     latexTranslate(tru)
   }
-  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
+  #subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
+  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, descr))
   within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
 }
 
@@ -335,7 +337,8 @@ today <- function(){
 #'
 #'
 #' @export
-createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, add_primer=0, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
+#createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, add_primer=0, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
+createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
    li <- list(
       description=description,
       comments=comments,
@@ -356,7 +359,7 @@ createSample <- function(description, comments, group, scientist, celltype="", g
       own_risk=own_risk,
       barcode=barcode,
       secondary_tag=secondary_tag,
-      add_primer=add_primer,
+    #  add_primer=add_primer,
       cutout_size=cutout_size,
       tagno=tagno,
       secondary_tagno=secondary_tagno,
