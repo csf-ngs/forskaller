@@ -3,8 +3,6 @@ require("RCurl")
 require("rjson")
 require("Hmisc") #latexTranslate
 require("httr")
-require("ggplot2")
-require("reshape2")
 
 ## http://ngs.csf.ac.at/forskalle/apidoc
 
@@ -29,7 +27,7 @@ createCredentials <- function(username, password){
 #' @param credentials list created with createCredentials
 #' @export
 startSession <- function(credentials){
-  loginurl <- "http://ngs.csf.ac.at/lammskalle/api/login"
+  loginurl <- "http://ngs.csf.ac.at/forskalle/api/login"
   curl <- getCurlHandle()
   curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
   tryCatch(
@@ -558,7 +556,8 @@ getToday <- function(){
 #'
 removeElementsFromList <- function(li, multinames){
     indices <- which(names(li) %in% multinames)
-    li[-indices]
+    lic <- li[-indices]
+    lic <- lic[order(names(lic))]
 }
 
 
@@ -568,8 +567,13 @@ removeElementsFromList <- function(li, multinames){
 flowcellToTable <- function(flowcell){
    toRemove <- c("lanes", "problems")   
    values <- removeElementsFromList(flowcell, toRemove) 
-   valO <- values[order(names(values))]
-   valO 
+   values 
+}
+
+#' gets tag length even if null
+#'
+getTagLength <- function(tag){
+  if(is.null(tag)){ 0 }else{ nchar(tag) }
 }
 
 #' get tags length for sample 
@@ -578,14 +582,12 @@ flowcellToTable <- function(flowcell){
 getTagsForSample <- function(sample){
    ss <- sample$request_sample$sample
    barcode <- ss$barcode
-   ltag1 <- nchar(ss$tag)
-   if(is.null(ss$secondary_tag)){
-     ltag2 <- 0
-   } else {
-     ltag2 <- nchar(ss$secondary_tag)
-   }
+   ltag1 <- getTagLength(ss$tag)
+   ltag2 <- getTagLength(ss$secondary_tag)
+   spike <- if(is.null(sample$is_spikein)){ FALSE }else{ sample$is_spikein == 1 }
    scientist <- ss$scientist
-   data.frame(barcode=barcode, ltag1=ltag1, ltag2=ltag2, spikeIn=sample$is_spikein, scientist=scientist)
+   description <- ss$descr
+   data.frame(barcode=barcode, ltag1=ltag1, ltag2=ltag2, spikeIn=spike, scientist=scientist, description=description)
 }
 
 
@@ -599,45 +601,23 @@ getTagsForSamples <- function(samples){
 simplifyTagsForLane <- function(tags){
    ltag1 <- max(tags$ltag1)
    ltag2 <- max(tags$ltag2)
-   hasSpikeIn <- any(tags$spikeIn > 0)
+   hasSpikeIn <- any(tags$spikeIn)
    scientist <- unique(tags$scientist)
    scientist <- if(length(scientist) > 1){ "multi" }else{ scientist }
-   data.frame(ltag1=ltag1, ltag2=ltag2, hasSpikeIn=spikeIn, scientist=scientist)
+   description <- unique(tags$description)
+   description <- if(length(description) > 1){ "multi" }else{ description }
+   data.frame(ltag1=ltag1, ltag2=ltag2, hasSpikeIn=hasSpikeIn, sampleCount=nrow(tags), scientist=scientist, description=description)
 }
 
 #' get simplified tags for lane
 #' 
 #'
 getTagsForLane <- function(lane){
-   laneNr <- lane[[1]]$num
-   tags <- getTagsForSamples(lane[[1]]$samples)
+   laneNr <- lane$num
+   tags <- getTagsForSamples(lane$samples)
    simp <- simplifyTagsForLane(tags)
    data.frame(lane=laneNr, simp)
 }
-
-
-getTags <- function(lane){
- #  laneNr <- lane$num
- #  sampleCount <- lane$
- #  hasSpikeIn <-
- #  scientist <-
- #  hasFirstIndex <-
- #  hasSecondIndex <-
-}  
-
-## for each sample:
-#   barcode
-#   tag
-#   tagno
-#   secondary_tagno
-#   secondary_tag  
-#   exptype     
- 
-#   samples[[1]]$request_sample$sample
-
-
-
-
 
 #' get flowcell by id 
 #' @param id
@@ -653,8 +633,10 @@ getFlowcellById <- function(id, session){
     return(s)
   }
   sj <- fromJSON(s) ## its a nested list
+  laneTags <- do.call("rbind", lapply(sj$lanes, getTagsForLane))
+  laneTags$flowcell <- id
+  laneTags
 }
-
 
 
 #' get flowcells  ?from=2014-09-02&to=2015-12-02
@@ -662,7 +644,7 @@ getFlowcellById <- function(id, session){
 #' @param to
 #' from <- "2014-09-02"
 #'
-getFlowcells <- function(from="2014-09-02", to=getToday(), session){
+getFlowcells <- function(from="2014-01-02", to=getToday(), session){
   s <- NULL
   query <- paste("http://ngs.csf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
   tryCatch(
@@ -673,7 +655,11 @@ getFlowcells <- function(from="2014-09-02", to=getToday(), session){
     return(s)
   }
   sj <- fromJSON(s) ## its a nested list
-  
+  sjc <- lapply(sj, removeElementsFromList, c("problems", "lanes", "planned_start", "comments"))    
+  rbf <- rbind.fill(lapply(sjc, function(f) {
+     data.frame(Filter(Negate(is.null), f), stringsAsFactors=FALSE)
+  }))
+  rbf
 }
 
 
