@@ -795,3 +795,46 @@ parseBamName <- function(path){
   if(length(m1) > 0){ m1 }else{ m2 }
 }
 
+
+#' worker method for general users: generate splitfile and command
+#' only for first index currently!!
+#'
+#' @export
+generateSplitFile <- function(bamPath, session){
+   fl <- parseBamName(bamPath)
+   if(length(fl) > 0){
+      outprefix <- paste(fl$flowcell, "_", fl$lane, sep="")
+      splitfile <- paste(outprefix, "_barcodes.tab", sep="")
+      outdir <- paste(outprefix, "_demultiplexed", sep="")
+      metrics <- paste(outdir, "/", outprefix, "_metrics.tab", sep="")      
+
+      fcl <- getRunsForLoggedInGroup(session)      
+      tags <- subset(fcl, flowcell==fl$flowcell & lane==fl$lane)
+      if(nrow(tags) > 0){
+        spl <- data.frame(barcode_sequence=tags$tag1, barcode_name=tags$tag1, library_name=tags$id)
+        write.table(spl, splitfile, row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
+        system(paste("mkdir -p ", outdir))    
+        cmd <- (paste("java -jar /path/to/BamIndexDecoder.jar OUTPUT_DIR=", outdir, " OUTPUT_PREFIX=", outprefix, " OUTPUT_FORMAT=bam", " INPUT=", bamPath, " BARCODE_FILE=", splitfile, " MAX_RECORDS_IN_RAM=60000000  MAX_MISMATCHES=1 MIN_MISMATCH_DELTA=1 MAX_NO_CALLS=1 CREATE_MD5_FILE=true COMPRESSION_LEVEL=9  METRICS_FILE=", metrics, sep=""))   
+        print(cmd)
+      }else{
+        err <- paste("could not find tags for flowcell lane in your primary group runs ", nrow(fcl), fl$flowcell, fl$lane, "\n")
+        stop(err)
+      }    
+   }else{ 
+      err <- paste("could not parse flowcell lane from bam ", bamPath, "\n")
+      stop(err)
+   }  
+}
+
+
+
+
+
+
+ 
+
+
+
+
+
+
