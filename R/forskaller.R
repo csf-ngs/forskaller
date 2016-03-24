@@ -799,6 +799,8 @@ parseBamName <- function(path){
 #' worker method for general users: generate splitfile and command
 #' only for first index currently!!
 #'
+#' on the cluster you have to "module load illumina2bam/1.17"
+#'
 #' @export
 generateSplitFile <- function(bamPath, session){
    fl <- parseBamName(bamPath)
@@ -814,8 +816,9 @@ generateSplitFile <- function(bamPath, session){
         spl <- data.frame(barcode_sequence=tags$tag1, barcode_name=tags$tag1, library_name=tags$id)
         write.table(spl, splitfile, row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
         system(paste("mkdir -p ", outdir))    
-        cmd <- (paste("java -jar /path/to/BamIndexDecoder.jar OUTPUT_DIR=", outdir, " OUTPUT_PREFIX=", outprefix, " OUTPUT_FORMAT=bam", " INPUT=", bamPath, " BARCODE_FILE=", splitfile, " MAX_RECORDS_IN_RAM=60000000  MAX_MISMATCHES=1 MIN_MISMATCH_DELTA=1 MAX_NO_CALLS=1 CREATE_MD5_FILE=true COMPRESSION_LEVEL=9  METRICS_FILE=", metrics, sep=""))   
+        cmd <- (paste("BamIndexDecoder OUTPUT_DIR=", outdir, " OUTPUT_PREFIX=", outprefix, " OUTPUT_FORMAT=bam", " INPUT=", bamPath, " BARCODE_FILE=", splitfile, " MAX_RECORDS_IN_RAM=60000000  MAX_MISMATCHES=1 MIN_MISMATCH_DELTA=1 MAX_NO_CALLS=1 CREATE_MD5_FILE=true COMPRESSION_LEVEL=9  METRICS_FILE=", metrics, sep=""))   
         print(cmd)
+        cmd
       }else{
         err <- paste("could not find tags for flowcell lane in your primary group runs ", nrow(fcl), fl$flowcell, fl$lane, "\n")
         stop(err)

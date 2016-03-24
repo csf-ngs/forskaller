@@ -35,10 +35,8 @@ username <- ""
 password <- ""
 
 session <- startSession(createCredentials(username, password))
-laneSamples <- get
-
-
-
+cmd <- generateSplitFile(bamPath, session)
+print(cmd)
 endSession(session)
 
 
