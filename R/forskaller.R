@@ -5,7 +5,7 @@ require("Hmisc") #latexTranslate
 require("httr")
 
 ##
-## http://ngs.csf.ac.at/forskalle/apidoc
+## http://ngs.vbcf.ac.at/forskalle/apidoc
 
 #' create credentials
 #' returns list username=username password=password
@@ -28,7 +28,7 @@ createCredentials <- function(username, password){
 #' @param credentials list created with createCredentials
 #' @export
 startSession <- function(credentials){
-  loginurl <- "http://ngs.csf.ac.at/forskalle/api/login"
+  loginurl <- "http://ngs.vbcf.ac.at/forskalle/api/login"
   curl <- getCurlHandle()
   curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
   tryCatch(
@@ -44,7 +44,7 @@ startSession <- function(credentials){
 #' @param session
 #' @export
 endSession <- function(session){
-  logouturl <- "http://ngs.csf.ac.at/forskalle/logout" #GET
+  logouturl <- "http://ngs.vbcf.ac.at/forskalle/logout" #GET
   getURLContent(logouturl, curl=session)
   rm(session)
 }
@@ -90,7 +90,7 @@ removeFromList <- function(lis, re){
 getSample <- function(sampleId, session, simplify=FALSE){
   s <- NULL
   tryCatch(
-   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
+   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
@@ -109,7 +109,7 @@ getSample <- function(sampleId, session, simplify=FALSE){
   sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
   tryCatch(
-     m <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session), ## its a string    
+     m <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session), ## its a string    
      error=function(e){ cat(paste("error retrieving measurement info: ", sampleId, "\n", e), file=stderr()) }
   )
   mj <- fromJSON(m)
@@ -185,7 +185,7 @@ getSamples <- function(sampleIds, session){
 #' @export
 getMultiplex <- function(multiId, session){
    tryCatch(
-     multi <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/multiplexes/", multiId, sep=""), curl=session), ## its a string,
+     multi <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiId, sep=""), curl=session), ## its a string,
      error=function(e){ cat(paste("error retrieving multiplex info: ", multiId, "\n", e), file=stderr()) }
    )	
    mj <- fromJSON(multi)
@@ -386,7 +386,7 @@ addSample <- function(sample, session){
     sampleJson <- toJSON(sample)
     httpheader <- c(Accept="application/json; charset=UTF-8", "Content-Type"="application/json")
     tryCatch(
-       addResult <- postForm("http://ngs.csf.ac.at/lammskalle/api/samples", curl=session, .opts=list(postfields=sampleJson))
+       addResult <- postForm("http://ngs.vbcf.ac.at/lammskalle/api/samples", curl=session, .opts=list(postfields=sampleJson))
  ,
        error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())}
     )
@@ -419,7 +419,7 @@ checkResultsToDF <- function(checkResultsIndex, checkResultsList, sampleId){
 runsForSample <- function(sampleId, session){
   s <- NULL
   tryCatch(
-   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
+   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving run info for sample: ", sampleId, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
@@ -443,7 +443,7 @@ runsForSample <- function(sampleId, session){
 samplesForGroup <- function(groupName, session){
   s <- NULL
   tryCatch(
-   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/samples?group=", groupName, "&since=10-1", sep=""), curl=session), ## its a string,
+   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples?group=", groupName, "&since=10-1", sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving samples for group: ", groupName, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
@@ -483,7 +483,7 @@ multiplexDfToLongWithBarcodes <- function(multiplexDF){
 multiplexById <- function(multiplex, session){
   s <- NULL
   tryCatch(
-   s <- getURLContent(paste("http://ngs.csf.ac.at/forskalle/api/multiplexes/", multiplex, sep=""), curl=session), ## its a string,
+   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiplex, sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving multiplex: ", multiplex, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
@@ -628,7 +628,7 @@ getTagsForLane <- function(lane){
 #'
 getFlowcellById <- function(id, session){
   s <- NULL
-  query <- paste("http://ngs.csf.ac.at/forskalle/api/flowcells/", id, sep="")
+  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", id, sep="")
   tryCatch(
    s <- getURLContent(query, curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving  flowcell ", id, "\n", e), file=stderr()) }
@@ -650,7 +650,7 @@ getFlowcellById <- function(id, session){
 #'
 getFlowcells <- function(from="2014-01-02", to=getToday(), session){
   s <- NULL
-  query <- paste("http://ngs.csf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
+  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
   tryCatch(
    s <- getURLContent(query, curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving runs info ", from, "-", to, "\n", e), file=stderr()) }
@@ -667,6 +667,11 @@ getFlowcells <- function(from="2014-01-02", to=getToday(), session){
 }
 
 
+getFlowcellLane <- function(flowcell, lane, session){
+  s <- NULL
+  query <- paste("http://ngs.vbcf.ac.atflowcells/:flowcell/:lane
+
+}
 
 
 
