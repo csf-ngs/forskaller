@@ -3,6 +3,7 @@ require("RCurl")
 require("rjson")
 require("Hmisc") #latexTranslate
 require("httr")
+require("stringr")
 
 ##
 ## http://ngs.vbcf.ac.at/forskalle/apidoc
@@ -539,8 +540,10 @@ barcodeCountsToRatio <- function(path){
 
 
 #' create from barcode a sequencelogo
+#' @param path ???
 #'
 #'
+#' @export
 sequenceFreqs <- function(path){
    fdf <- barcodeCountsToRatio(path) 
    fdfl <- melt(fdf, id.vars="position")       
@@ -549,15 +552,19 @@ sequenceFreqs <- function(path){
 
 
 #' get todays day for to for getRuns
-#'
+#' 
+#' 
+#' @export
 getToday <- function(){
    format(Sys.time(), "%Y-%m-%d")
 }
 
 
 #' removes multiple elements from a list by names
+#' @param li the list 
+#' @param vector of names to remove from list 
 #'
-#'
+#' @export
 removeElementsFromList <- function(li, multinames){
     indices <- which(names(li) %in% multinames)
     lic <- li[-indices]
@@ -566,8 +573,10 @@ removeElementsFromList <- function(li, multinames){
 
 
 #' convert flowcell to table row + list
+#' @param flowcell
 #'
 #'
+#' @export
 flowcellToTable <- function(flowcell){
    toRemove <- c("lanes", "problems")   
    values <- removeElementsFromList(flowcell, toRemove) 
@@ -576,13 +585,17 @@ flowcellToTable <- function(flowcell){
 
 #' gets tag length even if null
 #'
+#' @param tag
+#'
+#' @export
 getTagLength <- function(tag){
   if(is.null(tag)){ 0 }else{ nchar(tag) }
 }
 
 #' get tags length for sample 
-#'
+#' @param sample
 #' 
+#' @export
 getTagsForSample <- function(sample){
    ss <- sample$request_sample$sample
    barcode <- ss$barcode
@@ -597,7 +610,9 @@ getTagsForSample <- function(sample){
 
 #' iterate through samples on lane and get length of tags
 #' lane$samples[[1]]$request_sample$sample
+#' @param samples
 #'
+#' @export
 getTagsForSamples <- function(samples){
    do.call("rbind", lapply(samples, getTagsForSample))
 }
@@ -614,8 +629,9 @@ simplifyTagsForLane <- function(tags){
 }
 
 #' get simplified tags for lane
-#' 
+#' @param lane
 #'
+#' @export
 getTagsForLane <- function(lane){
    laneNr <- lane$num
    tags <- getTagsForSamples(lane$samples)
@@ -625,7 +641,9 @@ getTagsForLane <- function(lane){
 
 #' get flowcell by id 
 #' @param id
+#' @param session
 #'
+#' @export
 getFlowcellById <- function(id, session){
   s <- NULL
   query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", id, sep="")
@@ -648,12 +666,13 @@ getFlowcellById <- function(id, session){
 #' @param to
 #' from <- "2014-09-02"
 #'
+#' @export
 getFlowcells <- function(from="2014-01-02", to=getToday(), session){
   s <- NULL
   query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
   tryCatch(
    s <- getURLContent(query, curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving runs info ", from, "-", to, "\n", e), file=stderr()) }
+   error=function(e){ cat(paste("error retrieving flowcells info ", from, "-", to, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
     return(s)
@@ -667,13 +686,112 @@ getFlowcells <- function(from="2014-01-02", to=getToday(), session){
 }
 
 
+
+#' get samples for flowcell lane
+#' only admins can do this!!!  => not completed!!!
+#' 
+#' @export
 getFlowcellLane <- function(flowcell, lane, session){
   s <- NULL
-  query <- paste("http://ngs.vbcf.ac.atflowcells/:flowcell/:lane
-
+  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, "/", lane, sep="")
+  tryCatch(
+    s <- getURLContent(query, curl=session),
+    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell, lane ), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  s
 }
 
+#' get current user details
+#' @param session
+#'
+#' @export
+getUserDetails <- function(session){
+  s <- NULL
+  query <- "http://ngs.vbcf.ac.at/forskalle/api/users/current"
+  tryCatch(
+    s <- getURLContent(query, curl=session),
+    error=function(e){ cat(paste("error retrieving user info"), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s)
+  groupName <- sj$primary_group$name
+  groups <- data.frame(name=groupName, primary=TRUE)
+  list(groups=groups)
+}
+
+#' converts NULL to ""
+#'
+#' @export
+NULLtoN <- function(v){
+  if(is.null(v)){ "" }else{ v }
+}
+
+#' from sample to df
+#'
+#'  
+#' @export
+simplifyRunSample <- function(runSample){
+   tag1 <- runSample$request_sample$sample$tag
+   tag2 <- runSample$request_sample$sample$secondary_tag
+   id <- runSample$request_sample$sample$id
+   data.frame(id=id,tag1=NULLtoN(tag1),tag2=NULLtoN(tag2))
+}
+
+#' from run to df
+#'
+#' @export
+simplifyRunToLaneTags <- function(run){
+   flowcell <- run$flowcell_id
+   lane <- run$num
+   runSamples <- do.call("rbind", lapply(run$samples, simplifyRunSample)) 
+   data.frame(flowcell=flowcell, lane=lane, runSamples)
+}            
 
 
+#' get flowcell lanes for logged in user primary group
+#' 
+#'
+#'
+#' @export
+getRunsForLoggedInGroup <- function(session){
+  s <- NULL
+  query <- "http://ngs.vbcf.ac.at/forskalle/api/runs/group"
+  tryCatch(
+    s <- getURLContent(query, curl=session),
+    error=function(e){ cat(paste("error retrieving runs info for logged in user "), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) 
+  flowcellLanes <- do.call("rbind", lapply(sj, simplifyRunToLaneTags ))
+  flowcellLanes 
+}
 
+#' parses bam name into flowcell lane
+#'
+#'
+#' 
+#' @export
+parseBamName <- function(path){
+  p1 <- "([\\w-]*)_(\\d)_(\\d{2}-\\d{2}-\\d{4}).bam"  
+  p2 <- "([\\w-]*)_(\\d)_(\\d{4})(\\d{2})(\\d{2})(\\w)_(\\d{8}).bam"
+  nm <- basename(path)
+  
+  exF <- function(nm,p){
+    m <- str_match(nm,p)
+    if(!is.na(m[1,1])){
+       list(flowcell=m[1,2],lane=m[1,3])
+    }else{ list() }
+  }
+
+  m1 <- exF(nm,p1)
+  m2 <- exF(nm,p2)
+  if(length(m1) > 0){ m1 }else{ m2 }
+}
 

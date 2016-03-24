@@ -29,6 +29,18 @@ samples$measurements$`cDNA Synthesis`
 endSession(session)
 ```
 
+```R
+library("forskaller")
+username <- ""
+password <- ""
+
+session <- startSession(createCredentials(username, password))
+laneSamples <- get
+
+
+
+endSession(session)
+
 
 
 
