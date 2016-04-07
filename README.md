@@ -12,6 +12,8 @@ install_github("forskaller", "csf-ngs")
 
 example usage
 -------------
+
+##### sample info
 ```R
 library("forskaller")
 
@@ -28,6 +30,8 @@ samples$measurements$Preparation
 samples$measurements$`cDNA Synthesis`
 endSession(session)
 ```
+##### demultiplexing 
+[illumina2bam](https://github.com/wtsi-npg/illumina2bam) has to be installed and java -jar /path/to/BamIndexDecoder.jar has to be aliased to BamIndexDecoder
 
 ```R
 library("forskaller")
