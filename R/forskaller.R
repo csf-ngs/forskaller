@@ -667,7 +667,7 @@ getFlowcellById <- function(id, session){
 #' from <- "2014-09-02"
 #'
 #' @export
-getFlowcells <- function(from="2014-01-02", to=getToday(), session){
+getFlowcells <- function(session, from="2014-01-02", to=getToday()){
   s <- NULL
   query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
   tryCatch(
@@ -685,7 +685,36 @@ getFlowcells <- function(from="2014-01-02", to=getToday(), session){
   rbf
 }
 
+#' get data frame for sample
+#'
+#'
+#' @export
+getInfoFromRequestSample <- function(sam){
+    cn <- function(item){ if(is.null(item)){ NA }else{ item } }
+    spikein <- sam$is_spikein
+    rq <- sam$request_sample
+    rqs <- rq$sample
+    pooled <- as.logical(rq$pooled)
+    ratio <- rq$ratio
+    ownRisk <- as.logical(rqs$own_risk)
+    tag <- cn(rqs$tag)
+    barcode <- cn(rqs$barcode)
+    prep <- rqs$preparation_type
+    group <- rqs$group
+    exptype <- rqs$exptype
+    tag2 <- cn(rqs$secondary_tag)
+    multi_id <- cn(rq$multi_id)
+    sample_id <- rqs$obj_id
+    data.frame(sampleId=sample_id, multiId=multi_id, isSpikeIn=spikein, barcode=barcode, tag=tag, tag2=tag2, ownRisk=ownRisk, pooled=pooled, ratio=ratio, prep=prep, exptype=exptype, group=group)
+}
 
+#'
+#'
+#' @export
+getSamplesFromFlowcellLane <- function(json){
+  sfl <- do.call("rbind", lapply(json$samples, getInfoFromRequestSample  )) 
+  sfl
+}
 
 #' get samples for flowcell lane
 #' only admins can do this!!!  => not completed!!!
@@ -699,10 +728,14 @@ getFlowcellLane <- function(flowcell, lane, session){
     error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell, lane ), file=stderr()) }
   )
   if(is.null(s)){
-    return(s)
+    return(s)   
   }
-  s
+  sj <- fromJSON(s) ## its a nested list
+  sams <- getSamplesFromFlowcellLane(sj) 
+  sams
 }
+
+
 
 #' get current user details
 #' @param session
