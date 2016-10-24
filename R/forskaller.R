@@ -706,7 +706,8 @@ getInfoFromRequestSample <- function(sam){
     tag2 <- cn(rqs$secondary_tag)
     multi_id <- cn(rq$multi_id)
     sample_id <- rqs$obj_id
-    data.frame(sampleId=sample_id, multiId=multi_id, isSpikeIn=spikein, barcode=barcode, tag=tag, tag2=tag2, ownRisk=ownRisk, pooled=pooled, ratio=ratio, prep=prep, exptype=exptype, group=group)
+    result <- if(length(sam$check_results) > 0){ cn(sam$check_results[[1]][[1]]$result) }else{ NA }
+    data.frame(sampleId=sample_id, multiId=multi_id, isSpikeIn=spikein, barcode=barcode, tag=tag, tag2=tag2, ownRisk=ownRisk, pooled=pooled, ratio=ratio, prep=prep, exptype=exptype, group=group, result=result)
 }
 
 #'
@@ -732,8 +733,128 @@ getFlowcellLane <- function(flowcell, lane, session){
     return(s)   
   }
   sj <- fromJSON(s) ## its a nested list
-  sams <- getSamplesFromFlowcellLane(sj) 
+  lane_ok <- as.logical(sj$is_ok)
+  lane_analyzed <- as.logical(sj$analyzed)
+  seqdate <- sj$flowcell$sequencing_date
+  sams <- getSamplesFromFlowcellLane(sj)
+  sams$sequencing_date <- as.Date(seqdate)
+  sams$lane_ok <- lane_ok
+  sams$lane_analyzed <- lane_analyzed
   sams
+}
+
+
+#http://ngs.vbcf.ac.at/forskalle/api/deviceData/request/3901
+#http://ngs.vbcf.ac.at/forskalle/api/measurements/request/3901
+#' get measurement data for request
+#'  
+#' @export
+getMeasurementsForData <- function(requestId, session){
+  s <- NULL
+  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/request/", requestId, sep="")
+  tryCatch(
+    s <- getURLContent(query, curl=session),
+    error=function(e){ cat(paste("error retrieving measurements ", requestId ), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)
+  }
+  sj <- fromJSON(s) ## its a nested list
+
+}
+
+#' extracts from itemList elements with forskalle names and returns a data.frame with 
+#' columns named itemNames
+#'
+#' @export
+extractItems <- function(itemList, forskalleNames, itemNames ){
+   li <- list()
+   #print(str(itemList, 1))
+   for( ni in 1:length(forskalleNames)){ 
+        nm <- forskalleNames[ni]
+        im <- itemNames[ni]
+        ex <- itemList[[nm]]
+        le <- if(is.null(ex)){ NA }else{ ex }
+        #print(paste(nm,im,ex,le, is.null(ex), is.na(ex)))
+        li[im] <- le
+   }   
+   data.frame(li)
+}
+
+#' QPCR Extractor
+#'
+#'
+#' @export
+extractQPCR <- function(){
+   list(form="qPCR",
+        type="Data Entry",   
+        forskalleNames=c("obj_id", "multi_id", "flag", "efficiency", "form", "user", "size", "date", "control", "kit", "conc", "corrected_conc"),
+        itemNames=c("sampleId", "multiId", "flag", "efficiency", "form", "user", "size", "date", "control", "kit", "conc", "corrected_conc")
+   )
+}
+
+#' cDNA Synthesis Extractor
+#' not done
+#'
+#' @export
+extractCDNASynthesis <- function(){
+   list(form="cDNA Synthesis",
+        type="Data Entry",
+        forskalleNames=NA, #c("obj_id", "multi_id", "flag", "efficiency", "form", "user", "size", "date", "control", "kit", "conc", "corrected_conc"),
+        itemNames=NA #c("sampleId", "multiId", "flag", "efficiency", "form", "user", "size", "date", "control", "kit", "conc", "corrected_conc")
+   )
+}
+
+#' extract Size 
+#' 
+#'
+#' @export
+extractSize <- function(){
+   list(form="Size Analysis",
+        type="Data Entry",
+        forskalleNames=c("obj_id", "multi_id", "form", "cutout_size", "size", "molarity", "dilution", "conc", "user", "size", "date"),
+        itemNames=c("sampleId", "multiId", "form", "cutout size", "size", "molarity", "dilution", "conc", "user", "size", "date")
+   )
+}
+
+
+#' extract Preparation
+#'
+#'
+#' @export
+extractPreparation <- function(){
+   list(form="Preparation",
+        type="Data Entry",
+        forskalleNames=c("obj_id", "multi_id", "form", "cycles", "kit", "udgase", "date"),
+        itemNames=c("sampleId", "multiId", "form", "cycles", "kit", "udgase", "date")
+   )
+}
+
+
+#' extract measurement
+#'
+#'
+#' @export
+extractMeasurement <- function(measurementList, extractor){
+  filtered <- Filter(function(li){ li$form == extractor$form && li$type == extractor$type },  measurementList)
+  extracted <- lapply(filtered, extractItems, extractor$forskalleNames, extractor$itemNames)
+  df <- do.call("rbind", extracted)
+  df[order(df$sampleId, df$date),]
+}
+
+#' extract measurements
+#'
+#'
+#' @export
+extractMeasurements <- function(measurementList){
+  size <- extractMeasurement(measurementList, extractSize())
+  preparation <-  extractMeasurement(measurementList, extractPreparation())
+  qPCR <- extractMeasurement(measurementList, extractQPCR())
+ 
+  qPCR <- qPCR[!is.na(qPCR$kit),]
+
+  li <- list(size=size, preparation=preparation, qPCR=qPCR)
+  li
 }
 
 
@@ -764,6 +885,7 @@ getUserDetails <- function(session){
 NULLtoN <- function(v){
   if(is.null(v)){ "" }else{ v }
 }
+
 
 #' from sample to df
 #'
