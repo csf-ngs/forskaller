@@ -255,7 +255,7 @@ subsetF <- function(df, cols){
 #'      0 11344 Data Entry Preparation Carmen Czepe  16864     12      1   NA        0     200-800 2014-02-24 14:00:36   Ok Carmen Czepe 2014-02-26 16:28:39     1182   sample        0 NEB ultra RNA  beads    1391
 #'
 simplifyPreparation <- function(preparation){
- subsetF(preparation, c("obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method"))  
+ subsetF(preparation, c("obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method", "date"))  
 }
 
 
@@ -281,7 +281,7 @@ simplifySample <- function(sample){
     latexTranslate(tru)
   }
   #subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
-  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, descr))
+  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, descr, preparation_kit))
   subs$description <- subs$descr
   within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
 }
@@ -293,7 +293,7 @@ simplifySample <- function(sample){
 #       0  618 8.6     1182   sample 2014-02-20 15:23:32   NA        0 2014-02-21 15:14:57 Carmen Czepe   Ok Data Entry RNA Quantification        0 11278  16864 Carmen Czepe    1376
 #'
 simplifyRNAQuantification <- function(quantification){
-  subsetF(quantification, c("obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user"))
+  subsetF(quantification, c("obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user", "date"))
 }
 
 #' simplify size analysis data.frame
@@ -301,7 +301,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user")) 
+  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user", "date")) 
 }
 
 
@@ -310,7 +310,7 @@ simplifySizeAnalysis <- function(sizeanalysis){
 #'   resolved size efficiency  kit conc multi_id obj_type X2nM_control corrected_conc notified machine text                date flag change_user         change_date severity    id       type form obj_id     user R2 batchId
 #'         0  270       96.9 Kapa  2.9     1182   sample         2.24           4.85        0    ours      2014-03-03 11:44:00   Ok    Ru Huang 2014-03-03 11:47:20        0 11478 Data Entry qPCR  16864 Ru Huang  1    1437 
 simplifyQPCR <- function(qpcr){
-  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user"))
+  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user", "date"))
 }
 
 #' simplify Quantification (Chip-Seq)
@@ -319,7 +319,7 @@ simplifyQPCR <- function(qpcr){
 #'      user obj_type volume multi_id notified         change_date bioanalyzer_result obj_id           form resolved change_user  conc       type                date    id total text flag severity bioanalyzer_done batchId
 #'     Ru Huang   sample      9     1250        0 2014-03-04 12:52:36                 Ok  17853 Quantification        0    Ru Huang 10010 Data Entry 2014-03-04 11:10:39 11560 90.09   NA   Ok        0                1    1445
 simplifyQuantification <- function(quant){
-  subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user"))
+  subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user", "date"))
 }
 
 #' simplify cDNA synthesis (RNA-Seq)
@@ -327,7 +327,7 @@ simplifyQuantification <- function(quant){
 #'
 #'
 simplifyCDNASynthesis <- function(cdna){
-  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user", "ercc"))
+  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user", "ercc", "date"))
 }
 
 #' get today formatted for forskalle
@@ -736,10 +736,18 @@ getFlowcellLane <- function(flowcell, lane, session){
   lane_ok <- as.logical(sj$is_ok)
   lane_analyzed <- as.logical(sj$analyzed)
   seqdate <- sj$flowcell$sequencing_date
+  seqtype <- sj$flowcell$seqtype
+  seqlen <- sj$flowcell$readlen
+  seqrap <- sj$flowcell$rapid_mode
+  seqpaired <- sj$flowcell$paired
   sams <- getSamplesFromFlowcellLane(sj)
   sams$sequencing_date <- as.Date(seqdate)
   sams$lane_ok <- lane_ok
   sams$lane_analyzed <- lane_analyzed
+  sams$seqType <- seqtype
+  sams$seqLength <- seqlen
+  sams$seqPaired <- seqpaired
+  sams$seqRapid <- seqrap
   sams
 }
 
