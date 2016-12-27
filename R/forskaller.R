@@ -231,8 +231,13 @@ simplifyMeasurement <- function(measurement){
 #' @param df the data frame to subset by columns
 #' @param cols string vector of columns to subset in desired order
 #'
-subsetF <- function(df, cols){
+subsetF <- function(df, cols, numcols=NA){
    coli <- match(cols, colnames(df))
+ #  if(!is.na(numcols)){
+ #     ncoli <- match(numcols, colnames(df))
+ #     
+ #  }
+
    colp <- coli[!is.na(coli)]
    missingColumns <- which(is.na(coli))
    allColumns <- 1:length(cols)
@@ -686,11 +691,22 @@ getFlowcells <- function(session, from="2014-01-02", to=getToday()){
   rbf
 }
 
+
+# TODO: add other columns
+# take care not to lose info because factor
+getResultCheckData <- function(resultCheck){
+   rcd <- data.frame(resultCheck[[1]], stringsAsFactors=FALSE)
+   srcd <- rcd[c("total", "countq30", "dupl")]
+   as.data.frame(lapply(srcd, as.numeric))
+   #srcd <- subsetF(rcd, c("total", "countq30", "dupl", "bloomcat"))
+   #as.data.frame(lapply( ,as.numeric))
+}
+
 #' get data frame for sample
 #'
 #'
 #' @export
-getInfoFromRequestSample <- function(sam){
+getInfoFromRequestSample <- function(sam, withResults=FALSE){
     cn <- function(item){ if(is.null(item)){ NA }else{ item } }
     spikein <- sam$is_spikein
     rq <- sam$request_sample
@@ -707,14 +723,24 @@ getInfoFromRequestSample <- function(sam){
     multi_id <- cn(rq$multi_id)
     sample_id <- rqs$obj_id
     result <- if(length(sam$check_results) > 0){ cn(sam$check_results[[1]][[1]]$result) }else{ NA }
-    data.frame(sampleId=sample_id, multiId=multi_id, isSpikeIn=spikein, barcode=barcode, tag=tag, tag2=tag2, ownRisk=ownRisk, pooled=pooled, ratio=ratio, prep=prep, exptype=exptype, group=group, result=result)
+    sampleInfo <- data.frame(sampleId=sample_id, multiId=multi_id, isSpikeIn=spikein, barcode=barcode, tag=tag, tag2=tag2, ownRisk=ownRisk, pooled=pooled, ratio=ratio, prep=prep, exptype=exptype, group=group, result=result)
+
+    if(withResults){
+      rc <- getResultCheckData(sam$check_results[[1]])
+      sr <- cbind(sampleInfo,rc)
+      sr
+    }else{
+      sampleInfo
+    }
+
 }
 
 #'
 #'
 #' @export
-getSamplesFromFlowcellLane <- function(json){
-  sfl <- do.call("rbind", lapply(json$samples, getInfoFromRequestSample  )) 
+getSamplesFromFlowcellLane <- function(json, withResult){
+  sampleInfo <-  lapply(json$samples, getInfoFromRequestSample, withResult)
+  sfl <- do.call("rbind", sampleInfo)
   sfl
 }
 
@@ -722,7 +748,7 @@ getSamplesFromFlowcellLane <- function(json){
 #' only admins can do this!!!  => not completed!!!
 #' 
 #' @export
-getFlowcellLane <- function(flowcell, lane, session){
+getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
   s <- NULL
   query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, "/", lane, sep="")
   tryCatch(
@@ -740,7 +766,7 @@ getFlowcellLane <- function(flowcell, lane, session){
   seqlen <- sj$flowcell$readlen
   seqrap <- sj$flowcell$rapid_mode
   seqpaired <- sj$flowcell$paired
-  sams <- getSamplesFromFlowcellLane(sj)
+  sams <- getSamplesFromFlowcellLane(sj, withResult)
   sams$sequencing_date <- as.Date(seqdate)
   sams$lane_ok <- lane_ok
   sams$lane_analyzed <- lane_analyzed
