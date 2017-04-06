@@ -447,10 +447,10 @@ runsForSample <- function(sampleId, session){
 #' get samples for user
 #'
 #' @export
-samplesForGroup <- function(groupName, session){
+samplesForGroup <- function(groupName, session, since="2016-07-01"){
   s <- NULL
   tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples?group=", groupName, "&since=10-1", sep=""), curl=session), ## its a string,
+   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples?group=", groupName, "&from=", since, sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving samples for group: ", groupName, "\n", e), file=stderr()) }
   )
   if(is.null(s)){
@@ -776,6 +776,17 @@ getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
   sams$seqRapid <- seqrap
   sams
 }
+
+getBarcodesTable <- function(flowcell, lane, session){
+  fcl <- getFlowcellLane(flowcell, lane, session, FALSE) 
+  
+}
+
+
+writeBarcodesTable <- function(flowcell, lane, session){
+  getBarcodesTable(flowcell, lane, session) 
+}
+
 
 
 #http://ngs.vbcf.ac.at/forskalle/api/deviceData/request/3901
