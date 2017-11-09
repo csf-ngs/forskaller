@@ -761,6 +761,7 @@ getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
   sj <- fromJSON(s) ## its a nested list
   lane_ok <- as.logical(sj$is_ok)
   lane_analyzed <- as.logical(sj$analyzed)
+  primer <- sj$primer
   seqdate <- sj$flowcell$sequencing_date
   seqtype <- sj$flowcell$seqtype
   seqlen <- sj$flowcell$readlen
@@ -776,6 +777,52 @@ getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
   sams$seqRapid <- seqrap
   sams
 }
+
+
+perLane <- function(lane){
+    num <- as.integer(lane$num)
+    lane_ok <- as.logical(lane$is_ok)
+    lane_analyzed <- as.logical(lane$analyzed)
+    primer <- lane$primer
+    withData <- FALSE
+    total <- NA
+    countq30 <- NA
+    if(length(lane$unsplit_checks) > 0){
+        total <- as.integer(lane$unsplit_checks[[1]]$total)
+        countq30 <- as.integer(lane$unsplit_checks[[1]]$countq30)
+        withData <- TRUE
+    }
+    data.frame(lane=num, lane_ok=lane_ok, lane_analyzed=lane_analyzed, primer=primer, total=total, q30=countq30, withData=withData)            
+}
+
+#' get stats for flowcell lane without samples
+#' only admins can do this!!!
+#' 
+#' @export
+getFlowcellStats <- function(flowcell, session){
+  s <- NULL
+  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, sep="")
+  tryCatch(
+    s <- getURLContent(query, curl=session),
+    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell), file=stderr()) }
+  )
+  if(is.null(s)){
+    return(s)   
+  }
+  sj <- fromJSON(s) ## its a nested list
+  seqdate <- sj$sequencing_date
+  seqtype <- sj$seqtype
+  seqlen <- sj$readlen
+  seqrap <- sj$rapid_mode
+  seqpaired <- sj$paired
+  run_id <- sj$run_id
+  status <- sj$status  
+  laneDF <- do.call("rbind", lapply(sj$lanes, perLane))
+  fcdf <- data.frame(run_id=run_id, flowcell=flowcell, seqdate=seqdate, seqtype=seqtype, seqlen=seqlen, seqrep=seqrap, seqpaired=seqpaired, status=status)
+  cbind(fcdf, laneDF)
+}
+
+
 
 getBarcodesTable <- function(flowcell, lane, session){
   fcl <- getFlowcellLane(flowcell, lane, session, FALSE) 
