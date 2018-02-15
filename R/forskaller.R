@@ -1,12 +1,12 @@
 require("plyr")
-require("RCurl")
 require("rjson")
 require("Hmisc") #latexTranslate
 require("httr")
 require("stringr")
 
+
 ##
-## http://ngs.vbcf.ac.at/forskalle/apidoc
+## https://ngs.vbcf.ac.at/forskalle3/doc/api_intro.md
 
 #' create credentials
 #' returns list username=username password=password
@@ -20,34 +20,26 @@ createCredentials <- function(username, password){
 
 
 #' starts a forskalle session
-#' the api is a little stateful
+#' the api is a little stateful, but thats behind the back
 #' you should call endSession at the end
-#' returns a forskalle session that subsequent interactions with forskalle need
-#'
-#' its: session <- startSession(createCredentials(username, password))
+#' startSession(createCredentials(username, password))
 #' 
 #' @param credentials list created with createCredentials
+#'
 #' @export
 startSession <- function(credentials){
-  loginurl <- "http://ngs.vbcf.ac.at/forskalle/api/login"
-  curl <- getCurlHandle()
-  curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
-  tryCatch(
-    loginResult <- postForm(loginurl, .params = credentials, curl=curl, .checkParams=FALSE ),
-    error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())} 
-  )
-  curl
+  loginurl <- "https://ngs.vbcf.ac.at/forskalle3/api/login"
+  r <- POST(loginurl, body=credentials, encode="json")
+  stop_if_not_success(r, "login")
 }
 
 
 #' ends a forskalle session
 #'
-#' @param session
 #' @export
-endSession <- function(session){
-  logouturl <- "http://ngs.vbcf.ac.at/forskalle/logout" #GET
-  getURLContent(logouturl, curl=session)
-  rm(session)
+endSession <- function(){
+  logouturl <- "https://ngs.vbcf.ac.at/forskalle3/logout" #GET
+  GET(logouturl)
 }
 
 ## replace null with NA for as.data.frame
@@ -60,16 +52,14 @@ nullToNA <- function(li){
 ## form:
 ## "Preparation" , "Size Analysis", "qPCR" , "RNA Quantification"
 measurementToDF <- function(meas){
-  ci <- which(names(meas) == "changesets")  
-  batchId <- NA
-  if(length(meas$changesets) > 0){
-     batchId <- meas$changesets[[1]]$id
-  }
+  ci <- which(names(meas) == "changeset")
+  batchId <- meas$changeset_id
   mf <- meas[-ci]
   mf$batchId <- batchId
   mfn <- nullToNA(mf)
   list(type=mfn$form, data=as.data.frame(mfn, stringsAsFactors=FALSE))
 }
+
 
 removeFromList <- function(lis, re){
   li <- which(names(lis) == re)
@@ -81,6 +71,7 @@ removeFromList <- function(lis, re){
 #'
 #' @param sampleId the sample id 
 #' @param session the forskalle session
+#' @param sampleTag currently only remove
 #' @param should measurement columns be simplified  
 #'
 #' returns a list of
@@ -88,39 +79,33 @@ removeFromList <- function(lis, re){
 #' measurments = a list of data frames with measurements 
 #'
 #' @export
-getSample <- function(sampleId, session, simplify=FALSE){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
+getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
+  s <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, sep=""))
+  stop_if_not_success(r, paste("retrieving sampleId", sampleId, "simplify: ", simplify))
+  sj <- content(s)
+  sjl <- sj
+  if(sampleTag == "remove"){
+     sjl <- removeFromList(sj, "pool_tags")
   }
-  sj <- fromJSON(s) ## its a nested list
-  sjl <- removeFromList(sj, "requests")
   #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
-  logicalColumns <- c("shearing", "own_risk", "fragmented", "stranded")
+  logicalColumns <- c("own_risk", "fragmented", "stranded") #was shearing
   logicalColumnsIndex <- names(sjl) %in% logicalColumns 
   sjl[logicalColumnsIndex] <- as.logical(sjl[logicalColumnsIndex])
   # must replace null with NA
   sjln <- nullToNA(sjl)
-  
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
   sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
-  tryCatch(
-     m <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session), ## its a string    
-     error=function(e){ cat(paste("error retrieving measurement info: ", sampleId, "\n", e), file=stderr()) }
-  )
-  mj <- fromJSON(m)
+  labd <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, "/labdata", sep=""))
+  stop_if_not_success(r, paste("retrieving sampleId labdata: ", sampleId, "simplify: "))
+  mj <- content(labd)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
      sm <- lapply(mea, simplifyMeasurement)     
      sa <- simplifySample(sampleDF)
      #sample table is very long, split it somehow in lab/annotation
      #"id"               "preparation_type" "cutout_size"      "shearing"         "fragmented"       "stranded"         "own_risk"         "add_primer"       "exptype"          "organism"         "genotype"         "celltype"         "antibody"         "descr"
-     sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk))#, add_primer))
+     sampleLab <- subset(sa, select=c(id, prep, cutout_size, fragmented, stranded, own_risk))#, add_primer))
      sampleAnnot <- subset(sa, select=c(id, exptype, organism, genotype, celltype, antibody, descr))
      list(sample=sa, sampleLab=sampleLab, sampleAnnot=sampleAnnot, measurements=sm)
   } else {
@@ -132,7 +117,6 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #' gets samples as list of data frames
 #' 
 #' @param sampleIds vector of sample ids
-#' @param session the forskalle session
 #'  
 #' returns a list of data frames
 #' samples
@@ -140,16 +124,8 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #' all data frames are simplified (as in getSample)
 #'
 #' @export
-getSamples <- function(sampleIds, session){
-   samples <- NULL
-   tryCatch(
-      samples <- lapply(sampleIds, getSample, session, TRUE),
-      error=function(e){ cat(paste("error retrieving samples info: ", sampleIds, "\n", e), file=stderr()) }             
-   )
-   isNullS <- sapply(samples, function(s){ is.null(s) })
-   if(any(isNullS)){
-      return(NULL) 
-   }
+getSamples <- function(sampleIds){
+   samples <- lapply(sampleIds, getSample, simplify=TRUE)
    samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sample }))
    samplesADF <-  do.call("rbind", lapply(samples, function(s){ s$sampleAnnot }))
    samplesLDF <-  do.call("rbind", lapply(samples, function(s){ s$sampleLab }))
@@ -250,6 +226,7 @@ subsetF <- function(df, cols, numcols=NA){
      alldf <- cbind(alldf, col)
    }
    colnames(alldf) <- cols
+   colnames(alldf) <- gsub("^values.", "", colnames(alldf))
    data.frame(alldf)
 }
 
@@ -260,7 +237,7 @@ subsetF <- function(df, cols, numcols=NA){
 #'      0 11344 Data Entry Preparation Carmen Czepe  16864     12      1   NA        0     200-800 2014-02-24 14:00:36   Ok Carmen Czepe 2014-02-26 16:28:39     1182   sample        0 NEB ultra RNA  beads    1391
 #'
 simplifyPreparation <- function(preparation){
- subsetF(preparation, c("obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method", "date"))  
+ subsetF(preparation, c("obj_id", "batchId", "multi_id", "values.cycles", "values.method", "values.udgase", "flag", "user", "values.kit", "entry_date"))  
 }
 
 
@@ -286,9 +263,9 @@ simplifySample <- function(sample){
     latexTranslate(tru)
   }
   #subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
-  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, descr, preparation_kit))
-  subs$description <- subs$descr
-  within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
+  subs <- subset(sample, select=c(id, adaptor_tag, adaptor_secondary_tag, prep, cutout_size, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, description, preparation_kit))
+  subs$description <- subs$description ##kweep original
+  within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(description)})
 }
 
 
@@ -298,7 +275,7 @@ simplifySample <- function(sample){
 #       0  618 8.6     1182   sample 2014-02-20 15:23:32   NA        0 2014-02-21 15:14:57 Carmen Czepe   Ok Data Entry RNA Quantification        0 11278  16864 Carmen Czepe    1376
 #'
 simplifyRNAQuantification <- function(quantification){
-  subsetF(quantification, c("obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user", "date"))
+  subsetF(quantification, c("obj_id", "batchId", "multi_id", "values.conc", "values.kit", "values.rin", "values.total", "values.volume", "flag", "username", "entry_date"))
 }
 
 #' simplify size analysis data.frame
@@ -306,7 +283,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user", "date")) 
+  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "values.conc", "values.dilution", "values.molarity", "values.size", "flag", "values.kit", "method", "username", "entry_date")) 
 }
 
 
@@ -315,7 +292,7 @@ simplifySizeAnalysis <- function(sizeanalysis){
 #'   resolved size efficiency  kit conc multi_id obj_type X2nM_control corrected_conc notified machine text                date flag change_user         change_date severity    id       type form obj_id     user R2 batchId
 #'         0  270       96.9 Kapa  2.9     1182   sample         2.24           4.85        0    ours      2014-03-03 11:44:00   Ok    Ru Huang 2014-03-03 11:47:20        0 11478 Data Entry qPCR  16864 Ru Huang  1    1437 
 simplifyQPCR <- function(qpcr){
-  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user", "date"))
+  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "values.R2", "values.conc", "values.corrected.conc", "values.efficiency", "values.machine", "values.size", "values.kit", "flag", "username", "entry_date"))
 }
 
 #' simplify Quantification (Chip-Seq)
@@ -324,7 +301,7 @@ simplifyQPCR <- function(qpcr){
 #'      user obj_type volume multi_id notified         change_date bioanalyzer_result obj_id           form resolved change_user  conc       type                date    id total text flag severity bioanalyzer_done batchId
 #'     Ru Huang   sample      9     1250        0 2014-03-04 12:52:36                 Ok  17853 Quantification        0    Ru Huang 10010 Data Entry 2014-03-04 11:10:39 11560 90.09   NA   Ok        0                1    1445
 simplifyQuantification <- function(quant){
-  subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user", "date"))
+  subsetF(quant, c("obj_id", "batchId", "multi_id", "values.bioanalyzer.done", "values.conc", "values.total", "values.volume", "flag", "username", "entry_date"))
 }
 
 #' simplify cDNA synthesis (RNA-Seq)
@@ -332,7 +309,7 @@ simplifyQuantification <- function(quant){
 #'
 #'
 simplifyCDNASynthesis <- function(cdna){
-  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user", "ercc", "date"))
+  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "values.kit", "values.used", "username", "ercc", "entry_date"))
 }
 
 #' get today formatted for forskalle
@@ -346,7 +323,7 @@ today <- function(){
 #'
 #' @export
 #createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, add_primer=0, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
-createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
+createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  secondary_tag=NULL, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
    li <- list(
       description=description,
       comments=comments,
@@ -1077,9 +1054,19 @@ generateSplitFile <- function(bamPath, session){
    }  
 }
 
-
-
-
+#' stops if response is not successs
+#'
+#' @export
+stop_if_not_success <- function(response, message=""){
+   if(http_status(response)$category != "Success"){
+     error <- as.character(http_status(response))
+     if(message != ""){
+         error <- paste(error, message, sep="", collapse="\n")
+     }
+     write(error, stderr())
+     stop(error)
+   }
+}
 
 
  
