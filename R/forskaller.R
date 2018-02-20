@@ -1,7 +1,6 @@
 require("plyr")
 require("rjson")
 require("Hmisc") #latexTranslate
-require("httr")
 require("stringr")
 
 
@@ -29,7 +28,7 @@ createCredentials <- function(username, password){
 #' @export
 startSession <- function(credentials){
   loginurl <- "https://ngs.vbcf.ac.at/forskalle3/api/login"
-  r <- POST(loginurl, body=credentials, encode="json")
+  r <- httr::POST(loginurl, body=credentials, encode="json")
   stop_if_not_success(r, "login")
 }
 
@@ -39,7 +38,7 @@ startSession <- function(credentials){
 #' @export
 endSession <- function(){
   logouturl <- "https://ngs.vbcf.ac.at/forskalle3/logout" #GET
-  GET(logouturl)
+  httr::GET(logouturl)
 }
 
 ## replace null with NA for as.data.frame
@@ -81,8 +80,8 @@ removeFromList <- function(lis, re){
 #' @export
 getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   s <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, sep=""))
-  stop_if_not_success(r, paste("retrieving sampleId", sampleId, "simplify: ", simplify))
-  sj <- content(s)
+  stop_if_not_success(s, paste("retrieving sampleId", sampleId, "simplify: ", simplify))
+  sj <- httr::content(s)
   sjl <- sj
   if(sampleTag == "remove"){
      sjl <- removeFromList(sj, "pool_tags")
@@ -96,9 +95,9 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
   sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
-  labd <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, "/labdata", sep=""))
-  stop_if_not_success(r, paste("retrieving sampleId labdata: ", sampleId, "simplify: "))
-  mj <- content(labd)
+  labd <- httr::GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, "/labdata", sep=""))
+  stop_if_not_success(labd, paste("retrieving sampleId labdata: ", sampleId, "simplify: "))
+  mj <- httr::content(labd)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
      sm <- lapply(mea, simplifyMeasurement)     
@@ -155,17 +154,15 @@ getSamples <- function(sampleIds){
 #' 
 #' data.frame(multiId, sampleId, tag, ratio)
 #'
-#' @param multiId the id  multiplex ids start with M TODO: could check this? 
-#'                        if no M then some other info comes up
+#' @param multiId the id , multiId without M
+#'
 #' @param session the session
 #'
 #' @export
-getMultiplex <- function(multiId, session){
-   tryCatch(
-     multi <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiId, sep=""), curl=session), ## its a string,
-     error=function(e){ cat(paste("error retrieving multiplex info: ", multiId, "\n", e), file=stderr()) }
-   )	
-   mj <- fromJSON(multi)
+getMultiplex <- function(multiId){
+   r <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/multiplexes/", multiId, sep=""))
+   stop_if_not_success(r, paste("retrieving multiplex", multiId))
+   mj <- httr::content(r)
    mjs <- mj$samples
    sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
    sb$multiId <- multiId
@@ -362,20 +359,7 @@ createSample <- function(description, comments, group, scientist, celltype="", g
 
 }
 
-#' add sample to forskalle
-#' @param sample created with createSample
-#'
-#' @export
-addSample <- function(sample, session){
-    sampleJson <- toJSON(sample)
-    httpheader <- c(Accept="application/json; charset=UTF-8", "Content-Type"="application/json")
-    tryCatch(
-       addResult <- postForm("http://ngs.vbcf.ac.at/lammskalle/api/samples", curl=session, .opts=list(postfields=sampleJson))
- ,
-       error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())}
-    )
-}
- 
+
 #' turns one checkresults to a data frame
 #'
 #' @export
@@ -1058,8 +1042,8 @@ generateSplitFile <- function(bamPath, session){
 #'
 #' @export
 stop_if_not_success <- function(response, message=""){
-   if(http_status(response)$category != "Success"){
-     error <- as.character(http_status(response))
+   if(httr::http_status(response)$category != "Success"){
+     error <- as.character(httr::http_status(response))
      if(message != ""){
          error <- paste(error, message, sep="", collapse="\n")
      }
