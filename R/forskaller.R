@@ -1038,6 +1038,27 @@ generateSplitFile <- function(bamPath, session){
    }  
 }
 
+#' converts a list to a data frame, setting NULL to NA, only flat lists
+#'
+#' @export
+listToDF <- function(li){
+  liNA <- Map(function(le){ if(is.null(le)){ le <- NA }else{ le }}, li)
+  as.data.frame(liNA, stringsAsFactors=FALSE)
+}
+
+#' get barcodes for lane
+#'
+#'
+#' @export 
+getBarcodes <- function(flowcell, lane){
+   r <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/runs/illumina/", flowcell, "/", lane, "/barcodes", sep=""))
+   stop_if_not_success(r, paste("retrieving barcodes", flowcell, lane))
+   mj <- httr::content(r)
+   fb <- do.call("rbind", lapply(mj, listToDF))
+   fb
+}
+
+
 #' stops if response is not successs
 #'
 #' @export
