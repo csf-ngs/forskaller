@@ -3,6 +3,44 @@ require("rjson")
 require("Hmisc") #latexTranslate
 require("stringr")
 
+DEBUG <- FALSE
+
+API_KEY <- ""
+USER_AGENT <- httr::user_agent("http://github.com/hadley/httr")
+URLBASE <- "https://ngs.vbcf.ac.at"
+FSK3 <- "/forskalle3/api"
+
+#' uses the API-KEY for all interactions
+#' either use this or 
+#'
+#' startSession(createCredentials(username, password))
+#' endSession()
+#'
+#' @param key
+#' @export
+useKey <- function(key){
+   assign("API_KEY", key, envir = .GlobalEnv)
+}
+
+#' GET request with optional API-Key and UA
+#' 
+#' @param path API path 
+#' @param query optional query
+#' @export
+FGET <- function(path, query=NULL, description=NULL){
+  apipath <- paste(FSK3, "/", path, sep="")
+  apikey <- get("API_KEY",  envir = .GlobalEnv)
+  hdrs <- if(apikey != ""){
+    httr::add_headers(`X-API-Key` = apikey)   
+  }else{ NULL }
+  if(DEBUG){
+    print(paste(apipath, query, "headers:", paste(hdrs, sep=" ", collapse="" )))
+  }
+  r <- httr::GET(URLBASE, path=apipath, query=query, USER_AGENT, hdrs) 
+  stop_if_not_success(r, paste(description, path, query, r$url))
+  r
+}
+
 
 ##
 ## https://ngs.vbcf.ac.at/forskalle3/doc/api_intro.md
@@ -23,23 +61,15 @@ createCredentials <- function(username, password){
 #' you should call endSession at the end
 #' startSession(createCredentials(username, password))
 #' 
+#' or useKey(API-KEY)
+#'
 #' @param credentials list created with createCredentials
 #'
 #' @export
 startSession <- function(credentials){
-  loginurl <- "https://ngs.vbcf.ac.at/forskalle3/api/login"
+  loginurl <- paste(URLBASE, "/api/login", sep="")
   r <- httr::POST(loginurl, body=credentials, encode="json")
   stop_if_not_success(r, "login")
-}
-
-#' uses the forskalle API-Key for all interactions
-#' no need to use a Session anymore
-#'
-#' @param key your key
-#'
-#' @export
-useKey <- function(key){
-  add_headers(`X-API-Key`=key)
 }
 
 
@@ -89,8 +119,7 @@ removeFromList <- function(lis, re){
 #'
 #' @export
 getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
-  s <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, sep=""))
-  stop_if_not_success(s, paste("retrieving sampleId", sampleId, "simplify: ", simplify))
+  s <- FGET(paste("samples/", sampleId, sep=""))
   sj <- httr::content(s)
   sjl <- sj
   if(sampleTag == "remove"){
@@ -99,14 +128,17 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
   logicalColumns <- c("own_risk", "fragmented", "stranded") #was shearing
   logicalColumnsIndex <- names(sjl) %in% logicalColumns 
+  nulls <- sapply(sjl[logicalColumnsIndex], is.null)  
+  sjl[logicalColumnsIndex][nulls] <- FALSE
   sjl[logicalColumnsIndex] <- as.logical(sjl[logicalColumnsIndex])
   # must replace null with NA
   sjln <- nullToNA(sjl)
+  sjln[logicalColumnsIndex][nulls] <- NA
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
   sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
-  labd <- httr::GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/samples/", sampleId, "/labdata", sep=""))
-  stop_if_not_success(labd, paste("retrieving sampleId labdata: ", sampleId, "simplify: "))
+  
+  labd <- FGET(paste("samples/", sampleId, "/labdata", sep=""))
   mj <- httr::content(labd)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
@@ -120,7 +152,6 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   } else {
      list(sample=sampleDF, measurements=mea) 
   }
-
 }
 
 #' gets samples as list of data frames
@@ -170,7 +201,7 @@ getSamples <- function(sampleIds){
 #'
 #' @export
 getMultiplex <- function(multiId){
-   r <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/multiplexes/", multiId, sep=""))
+   r <- FGET(paste("multiplexes/", multiId, sep=""))
    stop_if_not_success(r, paste("retrieving multiplex", multiId))
    mj <- httr::content(r)
    mjs <- mj$samples
@@ -1056,29 +1087,53 @@ listToDF <- function(li){
   as.data.frame(liNA, stringsAsFactors=FALSE)
 }
 
-#' get barcodes for lane
-#'
+#' get barcodes for flowcell lane
+#' 
+#' @param flowcell the flowcell
+#' @param lane the lane
 #'
 #' @export 
 getBarcodes <- function(flowcell, lane){
-   r <- GET(paste("https://ngs.vbcf.ac.at/forskalle3/api/runs/illumina/", flowcell, "/", lane, "/barcodes", sep=""))
-   stop_if_not_success(r, paste("retrieving barcodes", flowcell, lane))
+   r <- FGET(paste("runs/illumina/", flowcell, "/", lane, "/barcodes", sep=""))
    mj <- httr::content(r)
    fb <- do.call("rbind", lapply(mj, listToDF))
    fb
 }
 
+#' get barcodes file for flowcell lane 
+#'
+#' @param flowcell the flowcell
+#' @param lane the lane
+#' @param outpath output path for tab delimited file
+#'
+#' @export 
+writeBarcodesFile <- function(flowcell, lane, outpath){
+   tab <- getBarcodes(flowcell, lane)
+   cols <- c("adaptor_tag", "adaptor_secondary_tag", "sample_id")   
+   tabs <- subset(tab, select=cols)
+   na2 <- is.na(tabs$adaptor_secondary_tag)
+   tabs$adaptor_secondary_tag[na2] <- ""
+   tabs$outname <- paste(tabs$sample_id, "_", tabs$adaptor_tag, tabs$adaptor_secondary_tag, sep="")
+   write.table(tabs, outpath, sep="\t", row.names=FALSE, col.names=TRUE, quote=FALSE)
+}
+
 
 #' stops if response is not successs
 #'
+#' @param response (the http respons)
+#' @param message the optional error message
+#' 
 #' @export
 stop_if_not_success <- function(response, message=""){
    if(httr::http_status(response)$category != "Success"){
      error <- as.character(httr::http_status(response))
      if(message != ""){
-         error <- paste(error, message, sep="", collapse="\n")
+        error <- paste(error, message, sep="", collapse="\n")
      }
      write(error, stderr())
+     if(DEBUG){
+       write(paste("headers:",as.data.frame(response$request$headers)), stderr())
+     }
      stop(error)
    }
 }
