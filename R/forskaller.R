@@ -32,6 +32,16 @@ startSession <- function(credentials){
   stop_if_not_success(r, "login")
 }
 
+#' uses the forskalle API-Key for all interactions
+#' no need to use a Session anymore
+#'
+#' @param key your key
+#'
+#' @export
+useKey <- function(key){
+  add_headers(`X-API-Key`=key)
+}
+
 
 #' ends a forskalle session
 #'
