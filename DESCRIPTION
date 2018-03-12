@@ -1,7 +1,7 @@
 Package: forskaller
 Title: R api to forskalle
 Description: R api to forskalle
-Version: 0.3
+Version: 0.4
 Authors@R: c(person("Ido","Tamir", role=c("aut","cre"),
     email="tamir@imp.ac.at"))
 Author: Ido Tamir <tamir@imp.ac.at>
@@ -9,7 +9,7 @@ Maintainer: Ido Tamir <tamir@imp.ac.at>
 Depends:
     plyr,
     Hmisc,
-    rjson,
+    jsonlite,
     httr,
     stringr,
     R (>= 3.1.0)

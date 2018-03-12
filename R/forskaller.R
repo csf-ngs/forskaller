@@ -1,5 +1,4 @@
 require("plyr")
-require("rjson")
 require("Hmisc") #latexTranslate
 require("stringr")
 
@@ -1109,8 +1108,17 @@ getBarcodes <- function(flowcell, lane){
 #' @export 
 writeBarcodesFile <- function(flowcell, lane, outpath){
    tab <- getBarcodes(flowcell, lane)
-   cols <- c("adaptor_tag", "adaptor_secondary_tag", "sample_id")   
-   tabs <- subset(tab, select=cols)
+   writeBarcodesToFile(tab, outpath)
+}
+ 
+#' writes barcodes to dual index file
+#'
+#' @param outpath
+#' @param barcodes
+#' @export
+writeBarcodesToFile <- function(barcodes, outpath){
+   cols <- c("adaptor_tag", "adaptor_secondary_tag", "sample_id")
+   tabs <- subset(barcodes, select=cols)
    na2 <- is.na(tabs$adaptor_secondary_tag)
    tabs$adaptor_secondary_tag[na2] <- ""
    tabs$outname <- paste(tabs$sample_id, "_", tabs$adaptor_tag, tabs$adaptor_secondary_tag, sep="")
