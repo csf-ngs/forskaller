@@ -4,7 +4,9 @@ require("stringr")
 
 DEBUG <- FALSE
 
-API_KEY <- ""
+FSK3ENV <- new.env(parent = emptyenv())
+FSK3ENV$API_KEY <- ""
+
 USER_AGENT <- httr::user_agent("http://github.com/hadley/httr")
 URLBASE <- "https://ngs.vbcf.ac.at"
 FSK3 <- "/forskalle3/api"
@@ -18,7 +20,7 @@ FSK3 <- "/forskalle3/api"
 #' @param key
 #' @export
 useKey <- function(key){
-   assign("API_KEY", key, envir = .GlobalEnv)
+   FSK3ENV$API_KEY <- key
 }
 
 #' GET request with optional API-Key and UA
@@ -28,7 +30,7 @@ useKey <- function(key){
 #' @export
 FGET <- function(path, query=NULL, description=NULL){
   apipath <- paste(FSK3, "/", path, sep="")
-  apikey <- get("API_KEY",  envir = .GlobalEnv)
+  apikey <- FSK3ENV$API_KEY 
   hdrs <- if(apikey != ""){
     httr::add_headers(`X-API-Key` = apikey)   
   }else{ NULL }
