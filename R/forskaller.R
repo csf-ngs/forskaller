@@ -425,7 +425,6 @@ checkResultsToDF <- function(checkResultsIndex, checkResultsList, sampleId){
 #' 
 #' @export
 runsForSample <- function(sampleId, session){
-  s <- NULL
   tryCatch(
    s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
    error=function(e){ cat(paste("error retrieving run info for sample: ", sampleId, "\n", e), file=stderr()) }
@@ -668,26 +667,20 @@ getFlowcellById <- function(id, session){
 }
 
 
+
+
 #' get flowcells  ?from=2014-09-02&to=2015-12-02
 #' @param from
 #' @param to
 #' from <- "2014-09-02"
 #'
 #' @export
-getFlowcells <- function(session, from="2014-01-02", to=getToday()){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
-  tryCatch(
-   s <- getURLContent(query, curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving flowcells info ", from, "-", to, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
+getFlowcells <- function(from="2014-01-02", to=getToday()){
+  r <- FGET("runs/illumina", query=list(filter.sequenced_after=from, filter.sequenced_before=to))
+  sj <- content(r)  
   sjc <- lapply(sj, removeElementsFromList, c("problems", "lanes", "planned_start", "comments"))    
   rbf <- rbind.fill(lapply(sjc, function(f) {
-     data.frame(Filter(Negate(is.null), f), stringsAsFactors=FALSE)
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
   }))
   rbf
 }
@@ -750,7 +743,8 @@ getSamplesFromFlowcellLane <- function(json, withResult){
 #' 
 #' @export
 getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
-  s <- NULL
+   r <- FGET("runs/illumina", query=list(filter.sequenced_after=from, filter.sequenced_before=to))  
+s <- NULL
   query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, "/", lane, sep="")
   tryCatch(
     s <- getURLContent(query, curl=session),
@@ -796,32 +790,45 @@ perLane <- function(lane){
     data.frame(lane=num, lane_ok=lane_ok, lane_analyzed=lane_analyzed, primer=primer, total=total, q30=countq30, withData=withData)            
 }
 
+
+getLaneChecks <- function(lane){
+  nr <- lane$unit_id 
+  if(length(lane$lane_checks) > 0){
+    fqcs <- lane$lane_checks[[1]]$fastqcs
+    df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+    df$nr <- nr
+  }else{
+    df <- data.frame(nr=nr)
+  } 
+  df
+}
+
 #' get stats for flowcell lane without samples
 #' only admins can do this!!!
 #' 
 #' @export
-getFlowcellStats <- function(flowcell, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)   
-  }
-  sj <- fromJSON(s) ## its a nested list
-  seqdate <- sj$sequencing_date
-  seqtype <- sj$seqtype
-  seqlen <- sj$readlen
-  seqrap <- sj$rapid_mode
-  seqpaired <- sj$paired
-  run_id <- sj$run_id
-  status <- sj$status  
-  laneDF <- do.call("rbind", lapply(sj$lanes, perLane))
-  fcdf <- data.frame(run_id=run_id, flowcell=flowcell, seqdate=seqdate, seqtype=seqtype, seqlen=seqlen, seqrep=seqrap, seqpaired=seqpaired, status=status)
-  cbind(fcdf, laneDF)
+getFlowcellStats <- function(flowcell){
+  r <- FGET(paste("runs/illumina/", flowcell, sep="")) 
+  fc <- content(r)
+  lanes <- fc$lanes
+  rbf <- rbind.fill(lapply(lanes, function(f) {
+     getLaneChecks(f)
+  }))
+  rbf$seqdate <- fc$sequencing_date
+  rbf
 }
+    
+#  seqdate <- sj$sequencing_date
+#  seqtype <- sj$seqtype
+#  seqlen <- sj$readlen
+#  seqrap <- sj$rapid_mode
+#  seqpaired <- sj$paired
+#  run_id <- sj$run_id
+#  status <- sj$status  
+#  laneDF <- do.call("rbind", lapply(sj$lanes, perLane))
+#  fcdf <- data.frame(run_id=run_id, flowcell=flowcell, seqdate=seqdate, seqtype=seqtype, seqlen=seqlen, seqrep=seqrap, seqpaired=seqpaired, status=status)
+#  cbind(fcdf, laneDF)
+#}
 
 
 
