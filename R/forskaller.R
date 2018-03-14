@@ -66,7 +66,7 @@ createCredentials <- function(username, password){
 #'
 #' @export
 startSession <- function(credentials){
-  loginurl <- paste(URLBASE, "/api/login", sep="")
+  loginurl <- paste(URLBASE, FSK3, "/login", sep="")
   r <- httr::POST(loginurl, body=credentials, encode="json")
   stop_if_not_success(r, "login")
 }
@@ -95,7 +95,8 @@ measurementToDF <- function(meas){
   mf <- meas[-ci]
   mf$batchId <- batchId
   mfn <- nullToNA(mf)
-  list(type=mfn$form, data=as.data.frame(mfn, stringsAsFactors=FALSE))
+  df <- data.frame(t(rapply(mfn, function(e){ e })), stringsAsFactors=FALSE)
+  list(type=mfn$form, data=df)
 }
 
 
@@ -1143,7 +1144,7 @@ stop_if_not_success <- function(response, message=""){
    if(httr::http_status(response)$category != "Success"){
      error <- as.character(httr::http_status(response))
      if(message != ""){
-        error <- paste(error, message, sep="", collapse="\n")
+        error <- paste(response[1], error, message, sep=" ", collapse="\n")
      }
      write(error, stderr())
      if(DEBUG){
