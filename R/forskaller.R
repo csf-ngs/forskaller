@@ -1,5 +1,3 @@
-require("plyr")
-require("Hmisc") #latexTranslate
 require("stringr")
 
 DEBUG <- FALSE
@@ -479,7 +477,7 @@ multiplexToDf <- function(multiplex){
 #' A/C = red laser
 #'
 multiplexDfToLongWithBarcodes <- function(multiplexDF){
-   ddply(multiplexDF, .(id), function(s){
+   plyr::ddply(multiplexDF, .(id), function(s){
       base <- strsplit(s$barcode, "")[[1]]
       position <- seq_along(base)
       laser <- ifelse(base == "A" | base == "C", "red", "green")
