@@ -1,5 +1,3 @@
-require("stringr")
-
 DEBUG <- FALSE
 
 FSK3ENV <- new.env(parent = emptyenv())
@@ -135,7 +133,7 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   sjln <- nullToNA(sjl)
   sjln[logicalColumnsIndex][nulls] <- NA
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
-  sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
+  sampleDF <- plyr::rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
   
   labd <- FGET(paste("samples/", sampleId, "/labdata", sep=""))
@@ -204,8 +202,8 @@ getMultiplex <- function(multiId){
    r <- FGET(paste("multiplexes/", multiId, sep=""))
    stop_if_not_success(r, paste("retrieving multiplex", multiId))
    mj <- httr::content(r)
-   mjs <- mj$samples
-   sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
+   mjs <- mj$multiplex_samples
+   sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$adaptor_tag, tag2=s$sample$adaptor_secondary_tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
    sb$multiId <- multiId
    subset(sb,select=c(multiId,sampleId,tag,ratio)) 
 }
@@ -236,7 +234,7 @@ simplifyMeasurement <- function(measurement){
         'cDNA Synthesis'=simplifyCDNASynthesis(measurement$data), 
         stop(paste("unknown measurement ", measurement$type))
     )
-    sr <- rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
+    sr <- plyr::rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
     list(type=measurement$type, data=sr)
 }
 
@@ -298,7 +296,7 @@ simplifySample <- function(sample){
     else{
       stringc
     }
-    latexTranslate(tru)
+    Hmisc::latexTranslate(tru)
   }
   #subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
   subs <- subset(sample, select=c(id, adaptor_tag, adaptor_secondary_tag, prep, cutout_size, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, description, preparation_kit))
@@ -425,40 +423,30 @@ checkResultsToDF <- function(checkResultsIndex, checkResultsList, sampleId){
 #' get run info from forskalle
 #' 
 #' @export
-runsForSample <- function(sampleId, session){
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving run info for sample: ", sampleId, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its    
-  if(length(sj) > 0){
-  checkResults <- sj[[1]]$check_results
-  allChecks <- do.call("rbind", lapply(seq_along(checkResults), checkResultsToDF, checkResults, sampleId))
-  allChecks
- }else{
-     data.frame(sampleId=sampleId, basecallsNr=NA, flowcell=NA, lane=NA, basecalls=NA, result=NA, total=NA, q30.1=NA, q30.2=NA)
-  }
+runsForSample <- function(sampleId){
+  r <- FGET(paste("samples/", sampleId, "/sequencing", sep=""))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))  
+  rbf
 }
 
 
 
-#' get samples for user
+#' get samples for own group : available for user
+#' if admin, groupName can be from different group
+#'  
 #'
 #' @export
-samplesForGroup <- function(groupName, session, since="2016-07-01"){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples?group=", groupName, "&from=", since, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving samples for group: ", groupName, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its
-  sapply(sj, function(s){ s$id })
+samplesForGroup <- function(groupName, session, since="2017-07-01", admin=FALSE){
+  route <- if(!admin){ "samples" }else{ "samples/admin" }
+  r <- FGET(route, query=list(filter.received_after=since, filter.group=groupName))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))
+  rbf
 }
 
 multiplexToDf <- function(multiplex){
@@ -468,7 +456,6 @@ multiplexToDf <- function(multiplex){
    }))
    mdf
 }
-
 
 
 #' creates long data.frame from multiplex
@@ -484,23 +471,6 @@ multiplexDfToLongWithBarcodes <- function(multiplexDF){
       data.frame(id=s$id, base=base, position=position, laser=laser, ratio=s$ratio)
    })
 }
-
-#' get multiplex 
-#'
-#'
-multiplexById <- function(multiplex, session){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiplex, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving multiplex: ", multiplex, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its
-  multiplexToDf(sj)
-}
-
 
 #' make barcode chart for multiplex
 #' 
@@ -648,26 +618,16 @@ getTagsForLane <- function(lane){
 
 #' get flowcell by id 
 #' @param id
-#' @param session
 #'
 #' @export
-getFlowcellById <- function(id, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", id, sep="")
-  tryCatch(
-   s <- getURLContent(query, curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving  flowcell ", id, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
-  laneTags <- do.call("rbind", lapply(sj$lanes, getTagsForLane))
-  laneTags$flowcell <- id
-  laneTags
+getFlowcellById <- function(id){
+  r <- FGET(paste("runs/illumina/", id, sep=""))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj$lanes, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  })) 
+  rbf  
 }
-
-
 
 
 #' get flowcells  ?from=2014-09-02&to=2015-12-02
@@ -678,9 +638,9 @@ getFlowcellById <- function(id, session){
 #' @export
 getFlowcells <- function(from="2014-01-02", to=getToday()){
   r <- FGET("runs/illumina", query=list(filter.sequenced_after=from, filter.sequenced_before=to))
-  sj <- content(r)  
+  sj <- httr::content(r)  
   sjc <- lapply(sj, removeElementsFromList, c("problems", "lanes", "planned_start", "comments"))    
-  rbf <- rbind.fill(lapply(sjc, function(f) {
+  rbf <- plyr::rbind.fill(lapply(sjc, function(f) {
      df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
   }))
   rbf
@@ -739,40 +699,6 @@ getSamplesFromFlowcellLane <- function(json, withResult){
   sfl
 }
 
-#' get samples for flowcell lane
-#' only admins can do this!!!  => not completed!!!
-#' 
-#' @export
-getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
-   r <- FGET("runs/illumina", query=list(filter.sequenced_after=from, filter.sequenced_before=to))  
-s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, "/", lane, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell, lane ), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)   
-  }
-  sj <- fromJSON(s) ## its a nested list
-  lane_ok <- as.logical(sj$is_ok)
-  lane_analyzed <- as.logical(sj$analyzed)
-  primer <- sj$primer
-  seqdate <- sj$flowcell$sequencing_date
-  seqtype <- sj$flowcell$seqtype
-  seqlen <- sj$flowcell$readlen
-  seqrap <- sj$flowcell$rapid_mode
-  seqpaired <- sj$flowcell$paired
-  sams <- getSamplesFromFlowcellLane(sj, withResult)
-  sams$sequencing_date <- as.Date(seqdate)
-  sams$lane_ok <- lane_ok
-  sams$lane_analyzed <- lane_analyzed
-  sams$seqType <- seqtype
-  sams$seqLength <- seqlen
-  sams$seqPaired <- seqpaired
-  sams$seqRapid <- seqrap
-  sams
-}
 
 
 perLane <- function(lane){
@@ -810,9 +736,9 @@ getLaneChecks <- function(lane){
 #' @export
 getFlowcellStats <- function(flowcell){
   r <- FGET(paste("runs/illumina/", flowcell, sep="")) 
-  fc <- content(r)
+  fc <- httr::content(r)
   lanes <- fc$lanes
-  rbf <- rbind.fill(lapply(lanes, function(f) {
+  rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
      getLaneChecks(f)
   }))
   rbf$seqdate <- fc$sequencing_date
@@ -850,18 +776,14 @@ writeBarcodesTable <- function(flowcell, lane, session){
 #' get measurement data for request
 #'  
 #' @export
-getMeasurementsForData <- function(requestId, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/request/", requestId, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving measurements ", requestId ), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
-
+getMeasurementsForRequest <- function(requestId, session){
+  stop("not done")
+  
+  #r <- FGET(paste("measurements/request", requestId, sep=""))
+  #fc <- httr::content(r)
+  #rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
+     
+  #}))
 }
 
 #' extracts from itemList elements with forskalle names and returns a data.frame with 
