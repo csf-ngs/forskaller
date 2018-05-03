@@ -744,31 +744,6 @@ getFlowcellStats <- function(flowcell){
   rbf$seqdate <- fc$sequencing_date
   rbf
 }
-    
-#  seqdate <- sj$sequencing_date
-#  seqtype <- sj$seqtype
-#  seqlen <- sj$readlen
-#  seqrap <- sj$rapid_mode
-#  seqpaired <- sj$paired
-#  run_id <- sj$run_id
-#  status <- sj$status  
-#  laneDF <- do.call("rbind", lapply(sj$lanes, perLane))
-#  fcdf <- data.frame(run_id=run_id, flowcell=flowcell, seqdate=seqdate, seqtype=seqtype, seqlen=seqlen, seqrep=seqrap, seqpaired=seqpaired, status=status)
-#  cbind(fcdf, laneDF)
-#}
-
-
-
-getBarcodesTable <- function(flowcell, lane, session){
-  fcl <- getFlowcellLane(flowcell, lane, session, FALSE) 
-  
-}
-
-
-writeBarcodesTable <- function(flowcell, lane, session){
-  getBarcodesTable(flowcell, lane, session) 
-}
-
 
 
 #http://ngs.vbcf.ac.at/forskalle/api/deviceData/request/3901
@@ -1016,6 +991,15 @@ listToDF <- function(li){
   as.data.frame(liNA, stringsAsFactors=FALSE)
 }
 
+#' random => ""
+#'
+#' @export
+removeRandom <- function(column){
+  column[column == "random"] <- ""
+  column
+}
+
+
 #' get barcodes for flowcell lane
 #' 
 #' @param flowcell the flowcell
@@ -1026,6 +1010,8 @@ getBarcodes <- function(flowcell, lane){
    r <- FGET(paste("runs/illumina/", flowcell, "/", lane, "/barcodes", sep=""))
    mj <- httr::content(r)
    fb <- do.call("rbind", lapply(mj, listToDF))
+   fb$adaptor_tag <- removeRandom(fb$adaptor_tag)
+   fb$adaptor_secondary_tag <- removeRandom(fb$adaptor_secondary_tag)  
    fb
 }
 

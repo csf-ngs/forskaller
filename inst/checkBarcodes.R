@@ -37,11 +37,11 @@ option_list <- list(
 
 
 createDualBarcodesFile <- function(bamfile, dualbarcodesfile){
-  res <- system2(DUALBC_SCRIPT, c(bamfile, dualbarcodesfile), stderr=TRUE) 
-  if(res != 0){
-    error <- paste("error summarising dual barcodes for", bamfile)
-    write(error, stderr())
-    stop(error)  
+  res <- system2(DUALBC_SCRIPT, c(bamfile, dualbarcodesfile), stdout=TRUE, stderr=TRUE) 
+  if(! is.null(attr(res, "status"))){
+     error <- paste("error summarising dual barcodes for", bamfile)
+     write(error, stderr())
+     stop(error)  
   }
 }
 
@@ -58,21 +58,32 @@ doIt <- function(){
    if(is.null(opt$splitfile)){
      if(! is.null(opt$apikey)){
        forskaller::useKey(opt$apikey)
-       bar <- forskaller::getAndWriteBarcodes(opt$flowcell, opt$lane, outPath("barcodes.tab"))
+       barfile <- outPath("barcodes.tab")
+       print("getting barcodes from fsk3")
+       bar <- forskaller::getAndWriteBarcodes(opt$flowcell, opt$lane, barfile)
      } else {
        stop("if no splitfile (i.e. barcodes => id mapping) then api is necessary to get it from forskalle3")
      }
    } else {
        bar <- readr::read_tsv(opt$splitfile)
+       barfile <- opt$splitfile
    }
-   if(! is.null(opt$bamfile) & !is.null(opt$dualbarcodesfile)){
-      createDualBarcodesFile(opt$bamfile, opt$dualbarcodesfile)
+   if(is.null(opt$dualbarcodesfile)){
+      if(! is.null(opt$bamfile)){
+         dualbc <- outPath("all_dual_indices.tab")
+         print("extracting indices from bam file")
+         createDualBarcodesFile(opt$bamfile, dualbc)
+      } else {
+         stop("if no dual barcodes file given, must supply bam file to generate it")
+      }
+   } else {
+       dualbc <- opt$dualbarcodesfile
    }
    bar$sample_id <- as.character(bar$sample_id)
    minLength1 <- max(c(6,min(length(bar$adaptor_tag))))
    minLength2 <- min(length(bar$adaptor_secondary_tag))
    checkfile <- outPath("barcode_check.tab")
-   r <- forskaller::check(opt$dualbarcodesfile, opt$splitfile, minLength1, minLength2, checkfile)     
+   r <- forskaller::check(barfile, dualbc, minLength1, minLength2, checkfile)     
    if(r == 0){
        checkTable <- readr::read_tsv(checkfile)
        report <- forskaller::mangleBarcodeTable(checkTable, bar)          

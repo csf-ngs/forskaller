@@ -7,6 +7,7 @@ Authors@R: c(person("Ido","Tamir", role=c("aut","cre"),
 Author: Ido Tamir <tamir@imp.ac.at>
 Maintainer: Ido Tamir <tamir@imp.ac.at>
 Imports:
+    magrittr,
     plyr,
     Hmisc,
     httr,

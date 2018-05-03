@@ -1,3 +1,4 @@
+#' @importFrom magrittr %>%
 
 
 ILLUMINAp5 <- "TCTTTCCCT"
@@ -22,12 +23,46 @@ getAndWriteBarcodes <- function(flowcell, lane, outpath){
    barc
 }
 
+generateDemultiplexing <- function(barcodes){
+  if(nrow(barcodes > 40)){
+    mut <- 0
+  } else {
+    mut <- 1
+  }
+  b1Min <- min(nchar(barcodes$bc1))
+  b1Max <- max(nchar(barcodes$bc1))
+  b2Min <- min(nchar(barcodes$bc2))
+  b2Max <- max(nchar(barcodes$bc2))
+  illumina <- nchar(barcodes$bc1) == 6 & nchar(barcodes$bc2) == 0
+  dual <- nchar(barcodes$bc1) > 6 & nchar(barcodes$bc2) > 6
+  if(all(illumina)){
+    length1 <- b1Min
+    length2 <- 0
+  } else if(all(dual)){
+    length1 <- b1Min
+    length2 <- b2Min
+  }
+  } else if(any(illumina) & any(dual)){
+    length1 <- b1Min
+    length2 <- 8
+  } else if(! any(illumina) & all(dual)){
+    length1 <- b1Min
+    length2 <- b2Min
+  } 
+
+  c( "--mut1", mut, "--mut2", mut,  "--len1", minLength1, "--len2", minLength2 ) 
+  
+
+}
+
+
+
 #' check barcodes file
 #'
 #' @export
-check <- function(dualbarcodesfile, splitfile, minLength1, minLength2, prefix){
-    cmd <- c("java", "-jar", DEMULTIPLEXER, "-b", splitfile, "--len1", minLength1, "--len2", minLength2, "--mut1", "1", "--mut2", "1", "--keepconflicting", "--check", "check", "-i", dualbarcodesfile, "-p", prefix)
-    print(cmd)
+check <- function(dualbarcodesfile, splitfile, prefix, otherOptions){
+    cmd <- c("java", "-jar", DEMULTIPLEXER, "-b", dualbarcodesfile, otherOptions, "--keepconflicting", "--check", "check", "-i", splitfile, "--outpathcheck", prefix)
+    print(paste(cmd, collapse=" "))
     system2(cmd)
 }
 
