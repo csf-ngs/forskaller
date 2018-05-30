@@ -1,27 +1,49 @@
 #' @importFrom magrittr %>%
 
 
-ILLUMINAp5 <- "TCTTTCCCT"
-QIAGENMIRNA <- "GTTCAGAGT"
 DEMULTIPLEXER <- "/groups/vbcf-ngs/bin/pipeline/demultiplexer.jar"
 
-correctBarcodes <- function(bar){
-   toCorrect <- bar$adaptor_tag != "" &  bar$adaptor_secondary_tag == "" & grepl("default:trueseq|illumina", tolower(bar$adaptor_type))
+
+#' correct single read barcodes to dual indexed one by adding the default p5 sequence
+#'
+#' partial apply with purrr::partial(correctBarcodes, trim1=TRUE, add2=TRUE)
+#'
+correctBarcodes <- function(bar, trim1=FALSE, add2=TRUE, trim2=TRUE){
+   ILLUMINAp5 <- "TCTTTCCCT"
+   QIAGENMIRNA <- "GTTCAGAGT"
+
+   toCorrect <- bar$adaptor_tag != "" &  bar$adaptor_secondary_tag == "" & (add2 | grepl("default:trueseq|illumina", tolower(bar$adaptor_type)))
    bar$adaptor_secondary_tag_original <- bar$adaptor_secondary_tag
    bar$adaptor_secondary_tag[toCorrect] <- ILLUMINAp5
+   if(trim1){
+     bar$adaptor_tag <- substring(bar$adaptor_tag,1,6)
+   }
+   if(trim2){
+     bar$adaptor_secondary_tag <- substring(bar$adaptor_secondary_tag, 1, 8)
+   }
    bar
 }
 
 
 #' write barcodes to file
 #'
+#' barcodeFilter can return NULL (=remove) or a modified barcode
+#'
+#' barcode columns:
+#' adaptor_tag adaptor_secondary_tag adaptor_type request_id multi_id sample_id is_spikein is_pool 
+#'
+#' if outpath == "" => no file
+#'
 #' @export
-getAndWriteBarcodes <- function(flowcell, lane, outpath){
+getAndWriteBarcodes <- function(flowcell, lane, outpath="", barcodeFilter=function(barcode){ barcode }){
    bar <- getBarcodes(flowcell, lane)
-   barc <- correctBarcodes(bar)
-   writeBarcodesToFile(barc, outpath)
-   barc
+   barf <- bar %>% purrrlyr::by_row(barcodeFilter, .collate="row", .labels = FALSE) %>% dplyr::select(-.row) 
+   if(outpath != ""){
+      writeBarcodesToFile(barf, outpath)
+   }
+   barf
 }
+
 
 generateDemultiplexing <- function(barcodes){
   if(nrow(barcodes > 40)){
@@ -41,7 +63,6 @@ generateDemultiplexing <- function(barcodes){
   } else if(all(dual)){
     length1 <- b1Min
     length2 <- b2Min
-  }
   } else if(any(illumina) & any(dual)){
     length1 <- b1Min
     length2 <- 8
