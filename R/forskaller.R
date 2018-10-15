@@ -647,6 +647,131 @@ getFlowcells <- function(from="2014-01-02", to=getToday()){
 }
 
 
+#' get requests for ADMIN
+#' @param from
+#' @param to
+#' @param group
+#' from <- "2017-01-01"
+#'
+#' @export
+getRequests <- function(group, from="2017-01-01", to=getToday()){
+   r <- FGET("requests/admin", query=list(filter.group=group, filter.submitted_after=from, filter.submitted_before=to))
+   sj <- httr::content(r)
+   requests <- plyr::rbind.fill(lapply(sj, function(f) {
+      data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+   }))
+   requests
+}
+
+#' get sequencings of request 
+#' @param id
+#'
+#' @export
+getRequestSequencing <- function(id){
+  r <- FGET(paste("requests/",id,"/sequencing",sep=""))
+  sj <- httr::content(r)
+  sequencings <- plyr::rbind.fill(lapply(sj, function(f) {
+     ss1 <- f$sequenced_samples[[1]] #we take the 1. one <<---- is this correct?  
+     is_spike <- ss1$is_spikein
+     request_lane <- ss1$request_sample$lane
+     request_lane_key <- paste(id, "_", request_lane, sep="")
+     data.frame(t(rapply(f$run, function(e){ e })),request_id=id, request_lane=request_lane, is_spike=is_spike, sequencing_number=1, request_lane_key, stringsAsFactors=FALSE)
+  }))
+  if(! is.null(sequencings) && nrow(sequencings) > 1){  
+    sequencings <- sequencings[order(sequencings$preparation_date),]
+    sequencings$sequencing_number <- 1:nrow(sequencings)
+  }
+  sequencings
+}
+
+#' gets request history
+#' @param id
+#'
+#' @export
+getRequestHistory <- function(id){
+  r <- FGET(paste("requests/",id,"/history",sep=""))
+  sj <- httr::content(r)
+  hdf <- do.call("rbind", lapply(sj, function(s){ data.frame(t(s), stringsAsFactors=FALSE) }))
+  hdf
+}
+
+#' date interval to days
+#'
+#' @export
+inDays <- function(t1,t2){
+  dt1 <- strftime(t1$date, "%Y-%m-%dT%H:%M:%S%z")
+  dt2 <- strftime(t2$date, "%Y-%m-%dT%H:%M:%S%z")
+  lubridate::interval(dt1,dt2) / lubridate::ddays(1)
+}
+
+###
+### I can't go into sample level data easily with the json data
+### I would have to parse it, convert to samples, requests_samples +1 for each onlhold -1 for each
+### removal of onhold until 0. So now I take 1. onhold until last onhold ends. 
+###
+
+#' onhold times in days
+#' @export
+onholdTimes <- function(request_history_accepted_sequencing){
+    onholdStarts <- which(request_history_accepted_sequencing$newstatus == "Onhold")
+    onholdEnds <- which(request_history_accepted_sequencing$oldstatus == "Onhold")
+    if(length(onholdStarts) > 0 & length(onholdEnds > 0)){ 
+       firstStart <- onholdStarts[1]
+       lastEnd <- onholdEnds[length(onholdEnds)]
+       inDays(request_history_accepted_sequencing[firstStart,]$date, request_history_accepted_sequencing[lastEnd,]$date)       
+    } else if(length(onholdStarts) == 0){
+       0
+    } else if(length(onholdStarts > 0) & length(onholdEnds == 0)) {
+       Inf
+    }
+}
+
+#' accepted to sequence in days
+#'
+#' @export
+fromAcceptedToSequenced <- function(request_history){
+  accepted <- which(request_history$newstatus == "Accepted")
+  if(length(accepted) > 0){
+    sequencing <- which(request_history$newstatus == "Sequencing")   
+    if(length(sequencing > 0)){
+      request_history_accepted_sequencing <- request_history[accepted[1]:sequencing[1],]
+      totaltime <- inDays(request_history_accepted_sequencing$date[1], tail(request_history_accepted_sequencing$date, n=1))
+      onhold <- onholdTimes(request_history_accepted_sequencing)
+      data.frame(totaltime=totaltime,onhold=onhold,nettime=totaltime-onhold)
+    }else{
+      data.frame(totaltime=Inf,onhold=NA,nettime=Inf)
+    } 
+  }else{
+    data.frame(totaltime=Inf,onhold=NA,nettime=Inf)
+  }
+}
+
+
+
+prepTypes <- function(request_lane){
+   preps <- sapply(request_lane$requests_samples, function(s){ s$sample$preparation_type })
+   #pt <- table(preps)
+   preps[1]
+}
+
+#' get request lanes data
+#' @param id
+#'
+#' @export
+getRequest <- function(id){
+  r <- FGET(paste("requests/",id,sep=""))
+  sj <- httr::content(r)
+  reqlanes <- plyr::rbind.fill(lapply(sj$request_lanes, function(f) {
+     prep <- prepTypes(f)
+     reqL <- extractItems(f, c("status", "share_status", "request_id", "pooled", "multi_id","num"), c("status", "share_status", "request_id", "pooled", "multi_id", "req_lane_num"))
+     reqL$request_lane_key <- paste(reqL$request_id, "_", reqL$req_lane_num, sep="")
+     reqL$prep <- prep
+     reqL
+  }))
+  reqlanes
+}
+
+
 # TODO: add other columns
 # take care not to lose info because factor
 getResultCheckData <- function(resultCheck){
