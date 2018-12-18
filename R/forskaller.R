@@ -663,6 +663,7 @@ getRequests <- function(group, from="2017-01-01", to=getToday()){
    requests
 }
 
+
 #' get sequencings of request 
 #' @param id
 #'
@@ -683,6 +684,22 @@ getRequestSequencing <- function(id){
   }
   sequencings
 }
+
+#' get estimates of request
+#' @param id
+#' 
+#' @export
+getRequestEstimate <- function(id){
+   r <- FGET(paste("requests/",id,"/estimate",sep=""))
+   sj <- httr::content(r)
+   items <- plyr::rbind.fill(lapply(sj$items, function(f) {
+     data.frame(request=id, group=sj$request$group, scientist=sj$request$scientist, 
+                category=f$category, code=f$code, count=f$count, description=f$description, price=f$price, total=f$total, 
+                cost_assignment=sj$request$cost_assignment, status=sj$request$status )
+   }))
+   items
+}
+
 
 #' gets request history
 #' @param id
