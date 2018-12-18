@@ -2,6 +2,8 @@ DEBUG <- FALSE
 
 FSK3ENV <- new.env(parent = emptyenv())
 FSK3ENV$API_KEY <- ""
+FSK3ENV$DOSTOP <- TRUE
+
 
 USER_AGENT <- httr::user_agent("http://github.com/hadley/httr")
 URLBASE <- "https://ngs.vbcf.ac.at"
@@ -19,6 +21,14 @@ useKey <- function(key){
    FSK3ENV$API_KEY <- key
 }
 
+#' set dostop on error
+#'
+#' @export
+doStop <- function(st){
+  FSK3ENV$DOSTOP <- st
+}
+
+
 #' GET request with optional API-Key and UA
 #' 
 #' @param path API path 
@@ -34,7 +44,7 @@ FGET <- function(path, query=NULL, description=NULL){
     print(paste(apipath, query, "headers:", paste(hdrs, sep=" ", collapse="" )))
   }
   r <- httr::GET(URLBASE, path=apipath, query=query, USER_AGENT, hdrs) 
-  stop_if_not_success(r, paste(description, path, query, r$url))
+  stop_if_not_success(r, paste(description, path, query, r$url), FSK3ENV$DOSTOP)
   r
 }
 
@@ -693,9 +703,10 @@ getRequestEstimate <- function(id){
    r <- FGET(paste("requests/",id,"/estimate",sep=""))
    sj <- httr::content(r)
    items <- plyr::rbind.fill(lapply(sj$items, function(f) {
-     data.frame(request=id, group=sj$request$group, scientist=sj$request$scientist, 
+     data.frame(request.id=id, request.accepted=NULLtoN(sj$request$accepted), request.submitted=NULLtoN(sj$request$submitted), 
+                group=sj$request$group, scientist=sj$request$scientist, 
                 category=f$category, code=f$code, count=f$count, description=f$description, price=f$price, total=f$total, 
-                cost_assignment=sj$request$cost_assignment, status=sj$request$status )
+                cost_assignment=NULLtoN(sj$request$cost_assignment), status=sj$request$status, stringsAsFactors=FALSE)
    }))
    items
 }
@@ -1190,7 +1201,7 @@ writeBarcodesToFile <- function(barcodes, outpath){
 #' @param message the optional error message
 #' 
 #' @export
-stop_if_not_success <- function(response, message=""){
+stop_if_not_success <- function(response, message="", dostop=TRUE){
    if(httr::http_status(response)$category != "Success"){
      error <- as.character(httr::http_status(response))
      if(message != ""){
@@ -1200,7 +1211,9 @@ stop_if_not_success <- function(response, message=""){
      if(DEBUG){
        write(paste("headers:",as.data.frame(response$request$headers)), stderr())
      }
-     stop(error)
+     if(dostop){
+        stop(error)
+     }
    }
 }
 
