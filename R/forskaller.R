@@ -442,6 +442,35 @@ runsForSample <- function(sampleId){
   rbf
 }
 
+#'
+#'
+#' @export
+simplifyLaneFromRun <- function(lane){
+   fastqccounts <- if(length(lane$lane_checks) > 0 & !is.na(lane$lane_checks$[[1]]$fastqcs)){
+      lane$lane_checks[[1]]$fastqcs[[1]]$total_count
+   } else {
+      NA
+   }
+   samplecount <- lane$sampnum
+   exptypes <- sapply(lane$sequenced_samples, function(ss){ ss$request_sample$sample$exptype })   
+   exptypesu <- paste(unique(exptypes),collapse=",")
+   tibble::tibble(lane=lane$unit_id, exptypes=exptypesu, count=fastqccounts)
+}
+
+#' get run by numeric fsk3 id
+#'
+#' @export
+runByFSK3Id <- function(runid){
+  r <- FGET(paste("runs/",runid, sep=""))
+  sj <- httr::content(r)
+  flowcell <- sj$vendor_id
+  print(flowcell)
+  rows <- do.call("rbind", lapply(sj$run_units, simplifyLaneFromRun))  
+  
+  rows$flowcell <- sj$vendor_id
+  rows$seqdate <- sj$sequencing_date 
+  rows
+}
 
 
 #' get samples for own group : available for user
@@ -732,6 +761,25 @@ inDays <- function(t1,t2){
   lubridate::interval(dt1,dt2) / lubridate::ddays(1)
 }
 
+#' filter samples
+#'
+#' filters = list(filter.received_after= , filter.exptype= ) 
+#'
+#' requires admin 
+#'
+#'
+#' @export
+getSamplesByFilter <- function(filters){
+  route <- "samples/admin"
+  r <- FGET(route, query=filters)
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))
+  rbf 
+}
+
+
 ###
 ### I can't go into sample level data easily with the json data
 ### I would have to parse it, convert to samples, requests_samples +1 for each onlhold -1 for each
@@ -898,6 +946,45 @@ getFlowcellStats <- function(flowcell){
   rbf
 }
 
+# for each sample:
+getLaneSample <- function(sequencedSample){
+   id <- sequencedSample$request_sample$sample$id
+   multi_id <- sequencedSample$multi_id
+   rs <- sequencedSample$request_sample
+   rl <- rs$request_lane
+   demultiplexing <- rl$request$demultiplexing
+   share_status <- rl$share_status
+   share_required_ratio <- rl$share_required_ratio
+   request_id <- rs$request_id   
+   is_spikein <- sequencedSample$is_spikein
+   tibble::tibble(id=id,demultiplexing=demultiplexing, is_spikein=is_spikein, multi_id=NULLtoNA(multi_id),request_id=request_id, share_status=NULLtoNA(share_status), share_required_ratio=NULLtoNA(share_required_ratio)) 
+}
+
+getLaneSamples <- function(lane){
+  ss <- lane$sequenced_samples
+  samples <-  plyr::ldply(ss,getLaneSample) 
+  samples$lane <- lane$num
+  samples$lane_status <- lane$status
+  samples
+}
+
+#' get lanes for flowcell
+#' 
+#' only admins
+#' @export
+getFlowcellLanes <- function(flowcell){
+  print(flowcell)
+  r <- FGET(paste("runs/illumina/", flowcell, sep=""))
+  fc <- httr::content(r)
+  lanes <- fc$lanes
+  rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
+     getLaneSamples(f)
+  }))
+  rbf$seqdate <- fc$sequencing_date
+  rbf$flowcell <- flowcell
+  rbf
+}
+
 
 #http://ngs.vbcf.ac.at/forskalle/api/deviceData/request/3901
 #http://ngs.vbcf.ac.at/forskalle/api/measurements/request/3901
@@ -1037,6 +1124,12 @@ NULLtoN <- function(v){
   if(is.null(v)){ "" }else{ v }
 }
 
+#' converts NULL to NA
+#'
+#' @export
+NULLtoNA <- function(v){
+  if(is.null(v)){ NA }else{ v }
+}
 
 #' from sample to df
 #'

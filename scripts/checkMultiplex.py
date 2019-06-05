@@ -4,14 +4,21 @@
 
 import sys
 
-def readIndices(indfile):
+def reverse_complement(seq):
+    complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    return "".join(complement.get(base, base) for base in reversed(seq))
+
+def readIndices(indfile, rc):
     indices = []
     with open(indfile) as inf:
          for line in inf:
              if line.lower().startswith("ind") or line.lower().startswith("bc"):
                 continue 
              items = line.split()
-             indices.append(items[0:2])
+             bcs = items[0:2]
+             if rc == "true":
+               bcs[1] = reverse_complement(bcs[1])
+             indices.append(bcs)
     return indices
 
 
@@ -32,7 +39,8 @@ def createQuery(indices):
 
 
 indfile = sys.argv[1]
-indices = readIndices(indfile)
+rc = sys.argv[2]
+indices = readIndices(indfile, rc)
 #print(indices)
 istr = [i[0]+"\t"+i[1] for i in indices]
 print("\n".join(istr))
