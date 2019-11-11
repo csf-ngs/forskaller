@@ -446,7 +446,7 @@ runsForSample <- function(sampleId){
 #'
 #' @export
 simplifyLaneFromRun <- function(lane){
-   fastqccounts <- if(length(lane$lane_checks) > 0 & !is.na(lane$lane_checks$[[1]]$fastqcs)){
+   fastqccounts <- if(length(lane$lane_checks) > 0 & !is.na(lane$lane_checks[[1]]$fastqcs)){
       lane$lane_checks[[1]]$fastqcs[[1]]$total_count
    } else {
       NA
