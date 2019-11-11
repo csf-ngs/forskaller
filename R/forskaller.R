@@ -1,12 +1,56 @@
-require("plyr")
-require("RCurl")
-require("rjson")
-require("Hmisc") #latexTranslate
-require("httr")
-require("stringr")
+DEBUG <- FALSE
+
+FSK3ENV <- new.env(parent = emptyenv())
+FSK3ENV$API_KEY <- ""
+FSK3ENV$DOSTOP <- TRUE
+
+
+USER_AGENT <- httr::user_agent("http://github.com/hadley/httr")
+URLBASE <- "https://ngs.vbcf.ac.at"
+FSK3 <- "/forskalle3/api"
+
+#' uses the API-KEY for all interactions
+#' either use this or 
+#'
+#' startSession(createCredentials(username, password))
+#' endSession()
+#'
+#' @param key
+#' @export
+useKey <- function(key){
+   FSK3ENV$API_KEY <- key
+}
+
+#' set dostop on error
+#'
+#' @export
+doStop <- function(st){
+  FSK3ENV$DOSTOP <- st
+}
+
+
+#' GET request with optional API-Key and UA
+#' 
+#' @param path API path 
+#' @param query optional query
+#' @export
+FGET <- function(path, query=NULL, description=NULL){
+  apipath <- paste(FSK3, "/", path, sep="")
+  apikey <- FSK3ENV$API_KEY 
+  hdrs <- if(apikey != ""){
+    httr::add_headers(`X-API-Key` = apikey)   
+  }else{ NULL }
+  if(DEBUG){
+    print(paste(apipath, query, "headers:", paste(hdrs, sep=" ", collapse="" )))
+  }
+  r <- httr::GET(URLBASE, path=apipath, query=query, USER_AGENT, hdrs) 
+  stop_if_not_success(r, paste(description, path, query, r$url), FSK3ENV$DOSTOP)
+  r
+}
+
 
 ##
-## http://ngs.vbcf.ac.at/forskalle/apidoc
+## https://ngs.vbcf.ac.at/forskalle3/doc/api_intro.md
 
 #' create credentials
 #' returns list username=username password=password
@@ -20,34 +64,28 @@ createCredentials <- function(username, password){
 
 
 #' starts a forskalle session
-#' the api is a little stateful
+#' the api is a little stateful, but thats behind the back
 #' you should call endSession at the end
-#' returns a forskalle session that subsequent interactions with forskalle need
-#'
-#' its: session <- startSession(createCredentials(username, password))
+#' startSession(createCredentials(username, password))
 #' 
+#' or useKey(API-KEY)
+#'
 #' @param credentials list created with createCredentials
+#'
 #' @export
 startSession <- function(credentials){
-  loginurl <- "http://ngs.vbcf.ac.at/forskalle/api/login"
-  curl <- getCurlHandle()
-  curlSetOpt(cookiejar="", followlocation = TRUE, curl=curl)
-  tryCatch(
-    loginResult <- postForm(loginurl, .params = credentials, curl=curl, .checkParams=FALSE ),
-    error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())} 
-  )
-  curl
+  loginurl <- paste(URLBASE, FSK3, "/login", sep="")
+  r <- httr::POST(loginurl, body=credentials, encode="json")
+  stop_if_not_success(r, "login")
 }
 
 
 #' ends a forskalle session
 #'
-#' @param session
 #' @export
-endSession <- function(session){
-  logouturl <- "http://ngs.vbcf.ac.at/forskalle/logout" #GET
-  getURLContent(logouturl, curl=session)
-  rm(session)
+endSession <- function(){
+  logouturl <- "https://ngs.vbcf.ac.at/forskalle3/logout" #GET
+  httr::GET(logouturl)
 }
 
 ## replace null with NA for as.data.frame
@@ -60,16 +98,15 @@ nullToNA <- function(li){
 ## form:
 ## "Preparation" , "Size Analysis", "qPCR" , "RNA Quantification"
 measurementToDF <- function(meas){
-  ci <- which(names(meas) == "changesets")  
-  batchId <- NA
-  if(length(meas$changesets) > 0){
-     batchId <- meas$changesets[[1]]$id
-  }
+  ci <- which(names(meas) == "changeset")
+  batchId <- meas$changeset_id
   mf <- meas[-ci]
   mf$batchId <- batchId
   mfn <- nullToNA(mf)
-  list(type=mfn$form, data=as.data.frame(mfn, stringsAsFactors=FALSE))
+  df <- data.frame(t(rapply(mfn, function(e){ e })), stringsAsFactors=FALSE)
+  list(type=mfn$form, data=df)
 }
+
 
 removeFromList <- function(lis, re){
   li <- which(names(lis) == re)
@@ -81,6 +118,7 @@ removeFromList <- function(lis, re){
 #'
 #' @param sampleId the sample id 
 #' @param session the forskalle session
+#' @param sampleTag currently only remove
 #' @param should measurement columns be simplified  
 #'
 #' returns a list of
@@ -88,51 +126,45 @@ removeFromList <- function(lis, re){
 #' measurments = a list of data frames with measurements 
 #'
 #' @export
-getSample <- function(sampleId, session, simplify=FALSE){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving sample info: ", sampleId, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
+getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
+  s <- FGET(paste("samples/", sampleId, sep=""))
+  sj <- httr::content(s)
+  sjl <- sj
+  if(sampleTag == "remove"){
+     sjl <- removeFromList(sj, "pool_tags")
   }
-  sj <- fromJSON(s) ## its a nested list
-  sjl <- removeFromList(sj, "requests")
   #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
-  logicalColumns <- c("shearing", "own_risk", "fragmented", "stranded")
+  logicalColumns <- c("own_risk", "fragmented", "stranded") #was shearing
   logicalColumnsIndex <- names(sjl) %in% logicalColumns 
+  nulls <- sapply(sjl[logicalColumnsIndex], is.null)  
+  sjl[logicalColumnsIndex][nulls] <- FALSE
   sjl[logicalColumnsIndex] <- as.logical(sjl[logicalColumnsIndex])
   # must replace null with NA
   sjln <- nullToNA(sjl)
-  
+  sjln[logicalColumnsIndex][nulls] <- NA
   sampleDF <- as.data.frame(sjln,stringsAsFactors=FALSE)
-  sampleDF <- rename(sampleDF, c("preparation_type"="prep"))
+  sampleDF <- plyr::rename(sampleDF, c("preparation_type"="prep"))
   sampleDF$id <- as.integer(sampleDF$id) # is numeric ?? 
-  tryCatch(
-     m <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/sample/", sampleId, sep=""), curl=session), ## its a string    
-     error=function(e){ cat(paste("error retrieving measurement info: ", sampleId, "\n", e), file=stderr()) }
-  )
-  mj <- fromJSON(m)
+  
+  labd <- FGET(paste("samples/", sampleId, "/labdata", sep=""))
+  mj <- httr::content(labd)
   mea <- lapply(mj, measurementToDF)
   if(simplify){
      sm <- lapply(mea, simplifyMeasurement)     
      sa <- simplifySample(sampleDF)
      #sample table is very long, split it somehow in lab/annotation
      #"id"               "preparation_type" "cutout_size"      "shearing"         "fragmented"       "stranded"         "own_risk"         "add_primer"       "exptype"          "organism"         "genotype"         "celltype"         "antibody"         "descr"
-     sampleLab <- subset(sa, select=c(id, prep, cutout_size, shearing, fragmented, stranded, own_risk))#, add_primer))
+     sampleLab <- subset(sa, select=c(id, prep, cutout_size, fragmented, stranded, own_risk))#, add_primer))
      sampleAnnot <- subset(sa, select=c(id, exptype, organism, genotype, celltype, antibody, descr))
      list(sample=sa, sampleLab=sampleLab, sampleAnnot=sampleAnnot, measurements=sm)
   } else {
      list(sample=sampleDF, measurements=mea) 
   }
-
 }
 
 #' gets samples as list of data frames
 #' 
 #' @param sampleIds vector of sample ids
-#' @param session the forskalle session
 #'  
 #' returns a list of data frames
 #' samples
@@ -140,16 +172,8 @@ getSample <- function(sampleId, session, simplify=FALSE){
 #' all data frames are simplified (as in getSample)
 #'
 #' @export
-getSamples <- function(sampleIds, session){
-   samples <- NULL
-   tryCatch(
-      samples <- lapply(sampleIds, getSample, session, TRUE),
-      error=function(e){ cat(paste("error retrieving samples info: ", sampleIds, "\n", e), file=stderr()) }             
-   )
-   isNullS <- sapply(samples, function(s){ is.null(s) })
-   if(any(isNullS)){
-      return(NULL) 
-   }
+getSamples <- function(sampleIds){
+   samples <- lapply(sampleIds, getSample, simplify=TRUE)
    samplesDF <- do.call("rbind", lapply(samples, function(s){ s$sample }))
    samplesADF <-  do.call("rbind", lapply(samples, function(s){ s$sampleAnnot }))
    samplesLDF <-  do.call("rbind", lapply(samples, function(s){ s$sampleLab }))
@@ -179,19 +203,17 @@ getSamples <- function(sampleIds, session){
 #' 
 #' data.frame(multiId, sampleId, tag, ratio)
 #'
-#' @param multiId the id  multiplex ids start with M TODO: could check this? 
-#'                        if no M then some other info comes up
+#' @param multiId the id , multiId without M
+#'
 #' @param session the session
 #'
 #' @export
-getMultiplex <- function(multiId, session){
-   tryCatch(
-     multi <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiId, sep=""), curl=session), ## its a string,
-     error=function(e){ cat(paste("error retrieving multiplex info: ", multiId, "\n", e), file=stderr()) }
-   )	
-   mj <- fromJSON(multi)
-   mjs <- mj$samples
-   sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
+getMultiplex <- function(multiId){
+   r <- FGET(paste("multiplexes/", multiId, sep=""))
+   stop_if_not_success(r, paste("retrieving multiplex", multiId))
+   mj <- httr::content(r)
+   mjs <- mj$multiplex_samples
+   sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$adaptor_tag, tag2=s$sample$adaptor_secondary_tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
    sb$multiId <- multiId
    subset(sb,select=c(multiId,sampleId,tag,ratio)) 
 }
@@ -222,7 +244,7 @@ simplifyMeasurement <- function(measurement){
         'cDNA Synthesis'=simplifyCDNASynthesis(measurement$data), 
         stop(paste("unknown measurement ", measurement$type))
     )
-    sr <- rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
+    sr <- plyr::rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
     list(type=measurement$type, data=sr)
 }
 
@@ -250,6 +272,7 @@ subsetF <- function(df, cols, numcols=NA){
      alldf <- cbind(alldf, col)
    }
    colnames(alldf) <- cols
+   colnames(alldf) <- gsub("^values.", "", colnames(alldf))
    data.frame(alldf)
 }
 
@@ -260,7 +283,7 @@ subsetF <- function(df, cols, numcols=NA){
 #'      0 11344 Data Entry Preparation Carmen Czepe  16864     12      1   NA        0     200-800 2014-02-24 14:00:36   Ok Carmen Czepe 2014-02-26 16:28:39     1182   sample        0 NEB ultra RNA  beads    1391
 #'
 simplifyPreparation <- function(preparation){
- subsetF(preparation, c("obj_id", "batchId", "multi_id", "cycles", "udgase", "cutout_size", "flag", "user", "kit", "method", "date"))  
+ subsetF(preparation, c("obj_id", "batchId", "multi_id", "values.cycles", "values.method", "values.udgase", "flag", "user", "values.kit", "entry_date"))  
 }
 
 
@@ -283,12 +306,12 @@ simplifySample <- function(sample){
     else{
       stringc
     }
-    latexTranslate(tru)
+    Hmisc::latexTranslate(tru)
   }
   #subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, add_primer, exptype, organism, genotype, celltype, antibody, descr))
-  subs <- subset(sample, select=c(id, tag,  prep, cutout_size, shearing, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, descr, preparation_kit))
-  subs$description <- subs$descr
-  within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(descr)})
+  subs <- subset(sample, select=c(id, adaptor_tag, adaptor_secondary_tag, prep, cutout_size, fragmented, stranded, own_risk, exptype, organism, genotype, celltype, antibody, scientist, group, description, preparation_kit))
+  subs$description <- subs$description ##kweep original
+  within(subs, { genotype=truncateTo(genotype); celltype=truncateTo(celltype); antibody=truncateTo(antibody); descr=truncateTo(description)})
 }
 
 
@@ -298,7 +321,7 @@ simplifySample <- function(sample){
 #       0  618 8.6     1182   sample 2014-02-20 15:23:32   NA        0 2014-02-21 15:14:57 Carmen Czepe   Ok Data Entry RNA Quantification        0 11278  16864 Carmen Czepe    1376
 #'
 simplifyRNAQuantification <- function(quantification){
-  subsetF(quantification, c("obj_id", "batchId", "multi_id", "conc", "rin", "flag", "user", "date"))
+  subsetF(quantification, c("obj_id", "batchId", "multi_id", "values.conc", "values.kit", "values.rin", "values.total", "values.volume", "flag", "username", "entry_date"))
 }
 
 #' simplify size analysis data.frame
@@ -306,7 +329,7 @@ simplifyRNAQuantification <- function(quantification){
 #' id severity dilution          form       type        user obj_id notified text                date flag change_user         change_date multi_id obj_type resolved molarity size kit conc method batchId
 #' 1 11436        0    -0.51 Size Analysis Data Entry Laura Bayer  16864        0   NA 2014-02-27 14:14:27   Ok Laura Bayer 2014-02-27 15:22:28     1182   sample        0     4.15  270  FA 0.74     HS    1429
 simplifySizeAnalysis <- function(sizeanalysis){
-  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "dilution", "size", "conc", "flag", "kit", "method", "user", "date")) 
+  subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "values.conc", "values.dilution", "values.molarity", "values.size", "flag", "values.kit", "method", "username", "entry_date")) 
 }
 
 
@@ -315,7 +338,7 @@ simplifySizeAnalysis <- function(sizeanalysis){
 #'   resolved size efficiency  kit conc multi_id obj_type X2nM_control corrected_conc notified machine text                date flag change_user         change_date severity    id       type form obj_id     user R2 batchId
 #'         0  270       96.9 Kapa  2.9     1182   sample         2.24           4.85        0    ours      2014-03-03 11:44:00   Ok    Ru Huang 2014-03-03 11:47:20        0 11478 Data Entry qPCR  16864 Ru Huang  1    1437 
 simplifyQPCR <- function(qpcr){
-  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "size", "efficiency", "conc", "corrected_conc", "kit", "flag", "user", "date"))
+  subsetF(qpcr, c("obj_id", "batchId", "multi_id", "values.R2", "values.conc", "values.corrected.conc", "values.efficiency", "values.machine", "values.size", "values.kit", "flag", "username", "entry_date"))
 }
 
 #' simplify Quantification (Chip-Seq)
@@ -324,7 +347,7 @@ simplifyQPCR <- function(qpcr){
 #'      user obj_type volume multi_id notified         change_date bioanalyzer_result obj_id           form resolved change_user  conc       type                date    id total text flag severity bioanalyzer_done batchId
 #'     Ru Huang   sample      9     1250        0 2014-03-04 12:52:36                 Ok  17853 Quantification        0    Ru Huang 10010 Data Entry 2014-03-04 11:10:39 11560 90.09   NA   Ok        0                1    1445
 simplifyQuantification <- function(quant){
-  subsetF(quant, c("obj_id", "batchId", "multi_id", "conc", "flag", "user", "date"))
+  subsetF(quant, c("obj_id", "batchId", "multi_id", "values.bioanalyzer.done", "values.conc", "values.total", "values.volume", "flag", "username", "entry_date"))
 }
 
 #' simplify cDNA synthesis (RNA-Seq)
@@ -332,7 +355,7 @@ simplifyQuantification <- function(quant){
 #'
 #'
 simplifyCDNASynthesis <- function(cdna){
-  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "kit", "user", "ercc", "date"))
+  subsetF(cdna, c("obj_id", "batchId", "multi_id", "flag", "values.kit", "values.used", "username", "ercc", "entry_date"))
 }
 
 #' get today formatted for forskalle
@@ -346,7 +369,7 @@ today <- function(){
 #'
 #' @export
 #createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, add_primer=0, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
-createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  shearing=0, secondary_tag=NULL, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
+createSample <- function(description, comments, group, scientist, celltype="", genotype="", exptype="ChIP-Seq", organism="", tissue_type="", antibody="", status="Aborted", received=today(), fragmented=1, userprep=1, preparation_kit=NULL, preparation_type="none", own_risk=0, barcode="", stranded=0,  secondary_tag=NULL, cutout_size="100-700", tagno=NULL, secondary_tagno=NULL,  ready=NULL, primer="Standard", cutout_size_min=100, cutout_size_max=700, fragment_size=""){
    li <- list(
       description=description,
       comments=comments,
@@ -385,20 +408,7 @@ createSample <- function(description, comments, group, scientist, celltype="", g
 
 }
 
-#' add sample to forskalle
-#' @param sample created with createSample
-#'
-#' @export
-addSample <- function(sample, session){
-    sampleJson <- toJSON(sample)
-    httpheader <- c(Accept="application/json; charset=UTF-8", "Content-Type"="application/json")
-    tryCatch(
-       addResult <- postForm("http://ngs.vbcf.ac.at/lammskalle/api/samples", curl=session, .opts=list(postfields=sampleJson))
- ,
-       error = function(e) { cat(paste("problem creating session with username: ", credentials$username, "\n", e), file=stderr())}
-    )
-}
- 
+
 #' turns one checkresults to a data frame
 #'
 #' @export
@@ -423,41 +433,59 @@ checkResultsToDF <- function(checkResultsIndex, checkResultsList, sampleId){
 #' get run info from forskalle
 #' 
 #' @export
-runsForSample <- function(sampleId, session){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/runs/sample/", sampleId, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving run info for sample: ", sampleId, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its    
-  if(length(sj) > 0){
-  checkResults <- sj[[1]]$check_results
-  allChecks <- do.call("rbind", lapply(seq_along(checkResults), checkResultsToDF, checkResults, sampleId))
-  allChecks
- }else{
-     data.frame(sampleId=sampleId, basecallsNr=NA, flowcell=NA, lane=NA, basecalls=NA, result=NA, total=NA, q30.1=NA, q30.2=NA)
-  }
+runsForSample <- function(sampleId){
+  r <- FGET(paste("samples/", sampleId, "/sequencing", sep=""))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))  
+  rbf
+}
+
+#'
+#'
+#' @export
+simplifyLaneFromRun <- function(lane){
+   fastqccounts <- if(length(lane$lane_checks) > 0 & !is.na(lane$lane_checks$[[1]]$fastqcs)){
+      lane$lane_checks[[1]]$fastqcs[[1]]$total_count
+   } else {
+      NA
+   }
+   samplecount <- lane$sampnum
+   exptypes <- sapply(lane$sequenced_samples, function(ss){ ss$request_sample$sample$exptype })   
+   exptypesu <- paste(unique(exptypes),collapse=",")
+   tibble::tibble(lane=lane$unit_id, exptypes=exptypesu, count=fastqccounts)
+}
+
+#' get run by numeric fsk3 id
+#'
+#' @export
+runByFSK3Id <- function(runid){
+  r <- FGET(paste("runs/",runid, sep=""))
+  sj <- httr::content(r)
+  flowcell <- sj$vendor_id
+  print(flowcell)
+  rows <- do.call("rbind", lapply(sj$run_units, simplifyLaneFromRun))  
+  
+  rows$flowcell <- sj$vendor_id
+  rows$seqdate <- sj$sequencing_date 
+  rows
 }
 
 
-
-#' get samples for user
+#' get samples for own group : available for user
+#' if admin, groupName can be from different group
+#'  
 #'
 #' @export
-samplesForGroup <- function(groupName, session, since="2016-07-01"){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/samples?group=", groupName, "&from=", since, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving samples for group: ", groupName, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its
-  sapply(sj, function(s){ s$id })
+samplesForGroup <- function(groupName, session, since="2017-07-01", admin=FALSE){
+  route <- if(!admin){ "samples" }else{ "samples/admin" }
+  r <- FGET(route, query=list(filter.received_after=since, filter.group=groupName))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))
+  rbf
 }
 
 multiplexToDf <- function(multiplex){
@@ -469,37 +497,19 @@ multiplexToDf <- function(multiplex){
 }
 
 
-
 #' creates long data.frame from multiplex
 #'
 #' G/T = green laser
 #' A/C = red laser
 #'
 multiplexDfToLongWithBarcodes <- function(multiplexDF){
-   ddply(multiplexDF, .(id), function(s){
+   plyr::ddply(multiplexDF, .(id), function(s){
       base <- strsplit(s$barcode, "")[[1]]
       position <- seq_along(base)
       laser <- ifelse(base == "A" | base == "C", "red", "green")
       data.frame(id=s$id, base=base, position=position, laser=laser, ratio=s$ratio)
    })
 }
-
-#' get multiplex 
-#'
-#'
-multiplexById <- function(multiplex, session){
-  s <- NULL
-  tryCatch(
-   s <- getURLContent(paste("http://ngs.vbcf.ac.at/forskalle/api/multiplexes/", multiplex, sep=""), curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving multiplex: ", multiplex, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its
-  multiplexToDf(sj)
-}
-
 
 #' make barcode chart for multiplex
 #' 
@@ -647,23 +657,15 @@ getTagsForLane <- function(lane){
 
 #' get flowcell by id 
 #' @param id
-#' @param session
 #'
 #' @export
-getFlowcellById <- function(id, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", id, sep="")
-  tryCatch(
-   s <- getURLContent(query, curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving  flowcell ", id, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
-  laneTags <- do.call("rbind", lapply(sj$lanes, getTagsForLane))
-  laneTags$flowcell <- id
-  laneTags
+getFlowcellById <- function(id){
+  r <- FGET(paste("runs/illumina/", id, sep=""))
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj$lanes, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  })) 
+  rbf  
 }
 
 
@@ -673,22 +675,176 @@ getFlowcellById <- function(id, session){
 #' from <- "2014-09-02"
 #'
 #' @export
-getFlowcells <- function(session, from="2014-01-02", to=getToday()){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells?from=",from, "&to=", to, sep="")
-  tryCatch(
-   s <- getURLContent(query, curl=session), ## its a string,
-   error=function(e){ cat(paste("error retrieving flowcells info ", from, "-", to, "\n", e), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
+getFlowcells <- function(from="2014-01-02", to=getToday()){
+  r <- FGET("runs/illumina", query=list(filter.sequenced_after=from, filter.sequenced_before=to))
+  sj <- httr::content(r)  
   sjc <- lapply(sj, removeElementsFromList, c("problems", "lanes", "planned_start", "comments"))    
-  rbf <- rbind.fill(lapply(sjc, function(f) {
-     data.frame(Filter(Negate(is.null), f), stringsAsFactors=FALSE)
+  rbf <- plyr::rbind.fill(lapply(sjc, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
   }))
   rbf
+}
+
+
+#' get requests for ADMIN
+#' @param from
+#' @param to
+#' @param group
+#' from <- "2017-01-01"
+#'
+#' @export
+getRequests <- function(group, from="2017-01-01", to=getToday()){
+   r <- FGET("requests/admin", query=list(filter.group=group, filter.submitted_after=from, filter.submitted_before=to))
+   sj <- httr::content(r)
+   requests <- plyr::rbind.fill(lapply(sj, function(f) {
+      data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+   }))
+   requests
+}
+
+
+#' get sequencings of request 
+#' @param id
+#'
+#' @export
+getRequestSequencing <- function(id){
+  r <- FGET(paste("requests/",id,"/sequencing",sep=""))
+  sj <- httr::content(r)
+  sequencings <- plyr::rbind.fill(lapply(sj, function(f) {
+     ss1 <- f$sequenced_samples[[1]] #we take the 1. one <<---- is this correct?  
+     is_spike <- ss1$is_spikein
+     request_lane <- ss1$request_sample$lane
+     request_lane_key <- paste(id, "_", request_lane, sep="")
+     data.frame(t(rapply(f$run, function(e){ e })),request_id=id, request_lane=request_lane, is_spike=is_spike, sequencing_number=1, request_lane_key, stringsAsFactors=FALSE)
+  }))
+  if(! is.null(sequencings) && nrow(sequencings) > 1){  
+    sequencings <- sequencings[order(sequencings$preparation_date),]
+    sequencings$sequencing_number <- 1:nrow(sequencings)
+  }
+  sequencings
+}
+
+#' get estimates of request
+#' @param id
+#' 
+#' @export
+getRequestEstimate <- function(id){
+   r <- FGET(paste("requests/",id,"/estimate",sep=""))
+   sj <- httr::content(r)
+   items <- plyr::rbind.fill(lapply(sj$items, function(f) {
+     data.frame(request.id=id, request.accepted=NULLtoN(sj$request$accepted), request.submitted=NULLtoN(sj$request$submitted), 
+                group=sj$request$group, scientist=sj$request$scientist, 
+                category=f$category, code=f$code, count=f$count, description=f$description, price=f$price, total=f$total, 
+                cost_assignment=NULLtoN(sj$request$cost_assignment), status=sj$request$status, stringsAsFactors=FALSE)
+   }))
+   items
+}
+
+
+#' gets request history
+#' @param id
+#'
+#' @export
+getRequestHistory <- function(id){
+  r <- FGET(paste("requests/",id,"/history",sep=""))
+  sj <- httr::content(r)
+  hdf <- do.call("rbind", lapply(sj, function(s){ data.frame(t(s), stringsAsFactors=FALSE) }))
+  hdf
+}
+
+#' date interval to days
+#'
+#' @export
+inDays <- function(t1,t2){
+  dt1 <- strftime(t1$date, "%Y-%m-%dT%H:%M:%S%z")
+  dt2 <- strftime(t2$date, "%Y-%m-%dT%H:%M:%S%z")
+  lubridate::interval(dt1,dt2) / lubridate::ddays(1)
+}
+
+#' filter samples
+#'
+#' filters = list(filter.received_after= , filter.exptype= ) 
+#'
+#' requires admin 
+#'
+#'
+#' @export
+getSamplesByFilter <- function(filters){
+  route <- "samples/admin"
+  r <- FGET(route, query=filters)
+  sj <- httr::content(r)
+  rbf <- plyr::rbind.fill(lapply(sj, function(f) {
+     df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+  }))
+  rbf 
+}
+
+
+###
+### I can't go into sample level data easily with the json data
+### I would have to parse it, convert to samples, requests_samples +1 for each onlhold -1 for each
+### removal of onhold until 0. So now I take 1. onhold until last onhold ends. 
+###
+
+#' onhold times in days
+#' @export
+onholdTimes <- function(request_history_accepted_sequencing){
+    onholdStarts <- which(request_history_accepted_sequencing$newstatus == "Onhold")
+    onholdEnds <- which(request_history_accepted_sequencing$oldstatus == "Onhold")
+    if(length(onholdStarts) > 0 & length(onholdEnds > 0)){ 
+       firstStart <- onholdStarts[1]
+       lastEnd <- onholdEnds[length(onholdEnds)]
+       inDays(request_history_accepted_sequencing[firstStart,]$date, request_history_accepted_sequencing[lastEnd,]$date)       
+    } else if(length(onholdStarts) == 0){
+       0
+    } else if(length(onholdStarts > 0) & length(onholdEnds == 0)) {
+       Inf
+    }
+}
+
+#' accepted to sequence in days
+#'
+#' @export
+fromAcceptedToSequenced <- function(request_history){
+  accepted <- which(request_history$newstatus == "Accepted")
+  if(length(accepted) > 0){
+    sequencing <- which(request_history$newstatus == "Sequencing")   
+    if(length(sequencing > 0)){
+      request_history_accepted_sequencing <- request_history[accepted[1]:sequencing[1],]
+      totaltime <- inDays(request_history_accepted_sequencing$date[1], tail(request_history_accepted_sequencing$date, n=1))
+      onhold <- onholdTimes(request_history_accepted_sequencing)
+      data.frame(totaltime=totaltime,onhold=onhold,nettime=totaltime-onhold)
+    }else{
+      data.frame(totaltime=Inf,onhold=NA,nettime=Inf)
+    } 
+  }else{
+    data.frame(totaltime=Inf,onhold=NA,nettime=Inf)
+  }
+}
+
+
+
+prepTypes <- function(request_lane){
+   preps <- sapply(request_lane$requests_samples, function(s){ s$sample$preparation_type })
+   #pt <- table(preps)
+   preps[1]
+}
+
+#' get request lanes data
+#' @param id
+#'
+#' @export
+getRequest <- function(id){
+  r <- FGET(paste("requests/",id,sep=""))
+  sj <- httr::content(r)
+  reqlanes <- plyr::rbind.fill(lapply(sj$request_lanes, function(f) {
+     prep <- prepTypes(f)
+     reqL <- extractItems(f, c("status", "share_status", "request_id", "pooled", "multi_id","num"), c("status", "share_status", "request_id", "pooled", "multi_id", "req_lane_num"))
+     reqL$request_lane_key <- paste(reqL$request_id, "_", reqL$req_lane_num, sep="")
+     reqL$prep <- prep
+     reqL
+  }))
+  reqlanes
 }
 
 
@@ -744,39 +900,6 @@ getSamplesFromFlowcellLane <- function(json, withResult){
   sfl
 }
 
-#' get samples for flowcell lane
-#' only admins can do this!!!  => not completed!!!
-#' 
-#' @export
-getFlowcellLane <- function(flowcell, lane, session, withResult = FALSE){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, "/", lane, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell, lane ), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)   
-  }
-  sj <- fromJSON(s) ## its a nested list
-  lane_ok <- as.logical(sj$is_ok)
-  lane_analyzed <- as.logical(sj$analyzed)
-  primer <- sj$primer
-  seqdate <- sj$flowcell$sequencing_date
-  seqtype <- sj$flowcell$seqtype
-  seqlen <- sj$flowcell$readlen
-  seqrap <- sj$flowcell$rapid_mode
-  seqpaired <- sj$flowcell$paired
-  sams <- getSamplesFromFlowcellLane(sj, withResult)
-  sams$sequencing_date <- as.Date(seqdate)
-  sams$lane_ok <- lane_ok
-  sams$lane_analyzed <- lane_analyzed
-  sams$seqType <- seqtype
-  sams$seqLength <- seqlen
-  sams$seqPaired <- seqpaired
-  sams$seqRapid <- seqrap
-  sams
-}
 
 
 perLane <- function(lane){
@@ -795,45 +918,72 @@ perLane <- function(lane){
     data.frame(lane=num, lane_ok=lane_ok, lane_analyzed=lane_analyzed, primer=primer, total=total, q30=countq30, withData=withData)            
 }
 
+
+getLaneChecks <- function(lane){
+  nr <- lane$unit_id 
+  if(length(lane$lane_checks) > 0){
+    fqcs <- lane$lane_checks[[1]]$fastqcs
+    df <- data.frame(t(rapply(f, function(e){ e })), stringsAsFactors=FALSE)
+    df$nr <- nr
+  }else{
+    df <- data.frame(nr=nr)
+  } 
+  df
+}
+
 #' get stats for flowcell lane without samples
 #' only admins can do this!!!
 #' 
 #' @export
-getFlowcellStats <- function(flowcell, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/flowcells/", flowcell, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving flowcell/lane info ", flowcell), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)   
-  }
-  sj <- fromJSON(s) ## its a nested list
-  seqdate <- sj$sequencing_date
-  seqtype <- sj$seqtype
-  seqlen <- sj$readlen
-  seqrap <- sj$rapid_mode
-  seqpaired <- sj$paired
-  run_id <- sj$run_id
-  status <- sj$status  
-  laneDF <- do.call("rbind", lapply(sj$lanes, perLane))
-  fcdf <- data.frame(run_id=run_id, flowcell=flowcell, seqdate=seqdate, seqtype=seqtype, seqlen=seqlen, seqrep=seqrap, seqpaired=seqpaired, status=status)
-  cbind(fcdf, laneDF)
+getFlowcellStats <- function(flowcell){
+  r <- FGET(paste("runs/illumina/", flowcell, sep="")) 
+  fc <- httr::content(r)
+  lanes <- fc$lanes
+  rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
+     getLaneChecks(f)
+  }))
+  rbf$seqdate <- fc$sequencing_date
+  rbf
 }
 
-
-
-getBarcodesTable <- function(flowcell, lane, session){
-  fcl <- getFlowcellLane(flowcell, lane, session, FALSE) 
-  
+# for each sample:
+getLaneSample <- function(sequencedSample){
+   id <- sequencedSample$request_sample$sample$id
+   multi_id <- sequencedSample$multi_id
+   rs <- sequencedSample$request_sample
+   rl <- rs$request_lane
+   demultiplexing <- rl$request$demultiplexing
+   share_status <- rl$share_status
+   share_required_ratio <- rl$share_required_ratio
+   request_id <- rs$request_id   
+   is_spikein <- sequencedSample$is_spikein
+   tibble::tibble(id=id,demultiplexing=demultiplexing, is_spikein=is_spikein, multi_id=NULLtoNA(multi_id),request_id=request_id, share_status=NULLtoNA(share_status), share_required_ratio=NULLtoNA(share_required_ratio)) 
 }
 
-
-writeBarcodesTable <- function(flowcell, lane, session){
-  getBarcodesTable(flowcell, lane, session) 
+getLaneSamples <- function(lane){
+  ss <- lane$sequenced_samples
+  samples <-  plyr::ldply(ss,getLaneSample) 
+  samples$lane <- lane$num
+  samples$lane_status <- lane$status
+  samples
 }
 
+#' get lanes for flowcell
+#' 
+#' only admins
+#' @export
+getFlowcellLanes <- function(flowcell){
+  print(flowcell)
+  r <- FGET(paste("runs/illumina/", flowcell, sep=""))
+  fc <- httr::content(r)
+  lanes <- fc$lanes
+  rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
+     getLaneSamples(f)
+  }))
+  rbf$seqdate <- fc$sequencing_date
+  rbf$flowcell <- flowcell
+  rbf
+}
 
 
 #http://ngs.vbcf.ac.at/forskalle/api/deviceData/request/3901
@@ -841,18 +991,14 @@ writeBarcodesTable <- function(flowcell, lane, session){
 #' get measurement data for request
 #'  
 #' @export
-getMeasurementsForData <- function(requestId, session){
-  s <- NULL
-  query <- paste("http://ngs.vbcf.ac.at/forskalle/api/measurements/request/", requestId, sep="")
-  tryCatch(
-    s <- getURLContent(query, curl=session),
-    error=function(e){ cat(paste("error retrieving measurements ", requestId ), file=stderr()) }
-  )
-  if(is.null(s)){
-    return(s)
-  }
-  sj <- fromJSON(s) ## its a nested list
-
+getMeasurementsForRequest <- function(requestId, session){
+  stop("not done")
+  
+  #r <- FGET(paste("measurements/request", requestId, sep=""))
+  #fc <- httr::content(r)
+  #rbf <- plyr::rbind.fill(lapply(lanes, function(f) {
+     
+  #}))
 }
 
 #' extracts from itemList elements with forskalle names and returns a data.frame with 
@@ -978,6 +1124,12 @@ NULLtoN <- function(v){
   if(is.null(v)){ "" }else{ v }
 }
 
+#' converts NULL to NA
+#'
+#' @export
+NULLtoNA <- function(v){
+  if(is.null(v)){ NA }else{ v }
+}
 
 #' from sample to df
 #'
@@ -1077,9 +1229,86 @@ generateSplitFile <- function(bamPath, session){
    }  
 }
 
+#' converts a list to a data frame, setting NULL to NA, only flat lists
+#'
+#' @export
+listToDF <- function(li){
+  liNA <- Map(function(le){ if(is.null(le)){ le <- NA }else{ le }}, li)
+  as.data.frame(liNA, stringsAsFactors=FALSE)
+}
+
+#' random => ""
+#'
+#' @export
+removeRandom <- function(column){
+  column[column == "random"] <- ""
+  column
+}
 
 
+#' get barcodes for flowcell lane
+#' 
+#' @param flowcell the flowcell
+#' @param lane the lane
+#'
+#' @export 
+getBarcodes <- function(flowcell, lane){
+   r <- FGET(paste("runs/illumina/", flowcell, "/", lane, "/barcodes", sep=""))
+   mj <- httr::content(r)
+   fb <- do.call("rbind", lapply(mj, listToDF))
+   fb$adaptor_tag <- removeRandom(fb$adaptor_tag)
+   fb$adaptor_secondary_tag <- removeRandom(fb$adaptor_secondary_tag)  
+   fb
+}
 
+#' get barcodes file for flowcell lane 
+#'
+#' @param flowcell the flowcell
+#' @param lane the lane
+#' @param outpath output path for tab delimited file
+#'
+#' @export 
+writeBarcodesFile <- function(flowcell, lane, outpath){
+   tab <- getBarcodes(flowcell, lane)
+   writeBarcodesToFile(tab, outpath)
+}
+ 
+#' writes barcodes to dual index file
+#'
+#' @param outpath
+#' @param barcodes
+#' @export
+writeBarcodesToFile <- function(barcodes, outpath){
+   cols <- c("adaptor_tag", "adaptor_secondary_tag", "sample_id")
+   tabs <- subset(barcodes, select=cols)
+   na2 <- is.na(tabs$adaptor_secondary_tag)
+   tabs$adaptor_secondary_tag[na2] <- ""
+   tabs$outname <- paste(tabs$sample_id, "_", tabs$adaptor_tag, tabs$adaptor_secondary_tag, sep="")
+   write.table(tabs, outpath, sep="\t", row.names=FALSE, col.names=TRUE, quote=FALSE)
+}
+
+
+#' stops if response is not successs
+#'
+#' @param response (the http respons)
+#' @param message the optional error message
+#' 
+#' @export
+stop_if_not_success <- function(response, message="", dostop=TRUE){
+   if(httr::http_status(response)$category != "Success"){
+     error <- as.character(httr::http_status(response))
+     if(message != ""){
+        error <- paste(response[1], error, message, sep=" ", collapse="\n")
+     }
+     write(error, stderr())
+     if(DEBUG){
+       write(paste("headers:",as.data.frame(response$request$headers)), stderr())
+     }
+     if(dostop){
+        stop(error)
+     }
+   }
+}
 
 
  

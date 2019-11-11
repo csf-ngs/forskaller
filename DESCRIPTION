@@ -1,18 +1,20 @@
 Package: forskaller
 Title: R api to forskalle
 Description: R api to forskalle
-Version: 0.1
+Version: 0.5
 Authors@R: c(person("Ido","Tamir", role=c("aut","cre"),
     email="tamir@imp.ac.at"))
 Author: Ido Tamir <tamir@imp.ac.at>
 Maintainer: Ido Tamir <tamir@imp.ac.at>
-Depends:
+Imports:
+    magrittr,
     plyr,
     Hmisc,
-    rjson,
-    RCurl,
-    stringr,
+    httr,
+    jsonlite,
+    stringr
+Depends:
     R (>= 3.1.0)
 License: GPLv3
 LazyData: true
-RoxygenNote: 5.0.1
+RoxygenNote: 6.1.1
