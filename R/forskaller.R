@@ -16,6 +16,7 @@ FSK3 <- "/forskalle3/api"
 #' endSession()
 #'
 #' @param key
+#' 
 #' @export
 useKey <- function(key){
    FSK3ENV$API_KEY <- key
@@ -33,6 +34,7 @@ doStop <- function(st){
 #' 
 #' @param path API path 
 #' @param query optional query
+#'
 #' @export
 FGET <- function(path, query=NULL, description=NULL){
   apipath <- paste(FSK3, "/", path, sep="")
@@ -456,6 +458,8 @@ simplifyLaneFromRun <- function(lane){
    exptypesu <- paste(unique(exptypes),collapse=",")
    tibble::tibble(lane=lane$unit_id, exptypes=exptypesu, count=fastqccounts)
 }
+
+
 
 #' get run by numeric fsk3 id
 #'
@@ -952,13 +956,17 @@ getLaneSample <- function(sequencedSample){
    multi_id <- sequencedSample$multi_id
    rs <- sequencedSample$request_sample
    rl <- rs$request_lane
+   group <- rl$request$group
+   groupId <- rl$request$group_id
    demultiplexing <- rl$request$demultiplexing
    share_status <- rl$share_status
    share_required_ratio <- rl$share_required_ratio
    request_id <- rs$request_id   
    is_spikein <- sequencedSample$is_spikein
-   tibble::tibble(id=id,demultiplexing=demultiplexing, is_spikein=is_spikein, multi_id=NULLtoNA(multi_id),request_id=request_id, share_status=NULLtoNA(share_status), share_required_ratio=NULLtoNA(share_required_ratio)) 
+   tibble::tibble(id=id,demultiplexing=demultiplexing, is_spikein=is_spikein, multi_id=NULLtoNA(multi_id),request_id=request_id, share_status=NULLtoNA(share_status), share_required_ratio=NULLtoNA(share_required_ratio), group=group, group_id=groupId) 
 }
+
+
 
 getLaneSamples <- function(lane){
   ss <- lane$sequenced_samples
@@ -1094,7 +1102,6 @@ extractMeasurements <- function(measurementList){
   li <- list(size=size, preparation=preparation, qPCR=qPCR)
   li
 }
-
 
 
 #' get current user details
