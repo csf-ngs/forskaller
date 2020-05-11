@@ -134,6 +134,7 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   sjl <- sj
   if(sampleTag == "remove"){
      sjl <- removeFromList(sj, "pool_tags")
+     sjl <- removeFromList(sjl, "controls")
   }
   #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
   logicalColumns <- c("own_risk", "fragmented", "stranded") #was shearing
