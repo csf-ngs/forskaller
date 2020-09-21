@@ -90,15 +90,20 @@ endSession <- function(){
   httr::GET(logouturl)
 }
 
-## replace null with NA for as.data.frame
+#' replace null with NA for as.data.frame
+#'
+#' @export
 nullToNA <- function(li){
   Map(function(v){ if(is.null(v)){ NA }else{ v }}, li)
 }
 
-### its a list of individual measurements. The form attribute gives the type ###
+## its a list of individual measurements. The form attribute gives the type ###
 ## mostly its just one value. changesets is a list => remove, but keep id
 ## form:
 ## "Preparation" , "Size Analysis", "qPCR" , "RNA Quantification"
+#' converts measurement to df
+#'
+#' @export
 measurementToDF <- function(meas){
   ci <- which(names(meas) == "changeset")
   batchId <- meas$changeset_id
@@ -110,6 +115,10 @@ measurementToDF <- function(meas){
 }
 
 
+
+#' removes item by name from list
+#'
+#' @export
 removeFromList <- function(lis, re){
   li <- which(names(lis) == re)
   lis[-li]
@@ -135,6 +144,7 @@ getSample <- function(sampleId, simplify=FALSE, sampleTag="remove"){
   if(sampleTag == "remove"){
      sjl <- removeFromList(sj, "pool_tags")
      sjl <- removeFromList(sjl, "controls")
+     sjl <- removeFromList(sjl, "trash_state")
   }
   #logicalColumns <- c("shearing", "add_primer", "own_risk", "fragmented", "stranded")
   logicalColumns <- c("own_risk", "fragmented", "stranded") #was shearing
