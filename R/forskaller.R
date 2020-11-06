@@ -18,7 +18,10 @@ FSK3 <- "/forskalle3/api"
 #' @param key
 #' 
 #' @export
-useKey <- function(key){
+useKey <- function(key=NULL){
+   if(is.null(key)){
+	  key <- yaml::read_yaml("~/.fsk_api.yml")$fsk_api_key
+   }
    FSK3ENV$API_KEY <- key
 }
 
