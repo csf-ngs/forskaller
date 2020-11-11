@@ -231,7 +231,7 @@ getMultiplex <- function(multiId){
    mjs <- mj$multiplex_samples
    sb <- do.call("rbind", lapply(mjs, function(s){ data.frame(sampleId=s$sample$id, tag=s$sample$adaptor_tag, tag2=s$sample$adaptor_secondary_tag, ratio=s$ratio, stringsAsFactors=FALSE)}))
    sb$multiId <- multiId
-   subset(sb,select=c(multiId,sampleId,tag,ratio)) 
+   subset(sb,select=c(multiId,sampleId,tag,tag2,ratio)) 
 }
 
 #' compare 2 multiplexes by barcode
