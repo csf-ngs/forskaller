@@ -12,7 +12,7 @@ def readIndices(indfile, rc):
     indices = []
     with open(indfile) as inf:
          for line in inf:
-             if line.lower().startswith("ind") or line.lower().startswith("bc"):
+             if line.lower().startswith("ind") or line.lower().startswith("bc") or line.lower().startswith("tag"):
                 continue 
              items = line.split()
              bcs = items[0:2]
@@ -32,7 +32,8 @@ def createQuery(indices):
     count = str(len(indices))
     dual = first+" and "+second
     single = first
-    indp = dual
+    #indp = dual
+    indp = single
     q = "select multi_id, count(sample_id) from multiplex_samples join samples on sample_id = samples.id where multi_id in (select multi_id from multiplex_samples join samples on sample_id = samples.id where multi_id in (select multi_id from multiplex_samples join samples on sample_id = samples.id where "+indp+") and "+indp+" group by multi_id having count(sample_id) = "+count+") group by multi_id having count(sample_id) = "+count+";"
     return q
 

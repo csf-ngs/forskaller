@@ -48,7 +48,8 @@ FGET <- function(path, query=NULL, description=NULL){
   if(DEBUG){
     print(paste(apipath, query, "headers:", paste(hdrs, sep=" ", collapse="" )))
   }
-  r <- httr::GET(URLBASE, path=apipath, query=query, USER_AGENT, hdrs) 
+  fquery = query[!is.na(query)]
+  r <- httr::GET(URLBASE, path=apipath, query=fquery, USER_AGENT, hdrs) 
   stop_if_not_success(r, paste(description, path, query, r$url), FSK3ENV$DOSTOP)
   r
 }
@@ -258,7 +259,8 @@ simplifyMeasurement <- function(measurement){
         'RNA Quantification'=simplifyRNAQuantification(measurement$data),
         'Quantification'=simplifyQuantification(measurement$data),
         'cDNA Synthesis'=simplifyCDNASynthesis(measurement$data), 
-        stop(paste("unknown measurement ", measurement$type))
+    	simplifyUnkown(measurement$data, measurement$type)    
+        #stop(paste("unknown measurement ", measurement$type))
     )
     sr <- plyr::rename(simple, c("obj_id"="sampleId", "multi_id"="multiId"))
     list(type=measurement$type, data=sr)
@@ -348,6 +350,11 @@ simplifySizeAnalysis <- function(sizeanalysis){
   subsetF(sizeanalysis, c("obj_id", "batchId", "multi_id", "values.conc", "values.dilution", "values.molarity", "values.size", "flag", "values.kit", "method", "username", "entry_date")) 
 }
 
+#' simplify unknown, was stop
+#'
+simplifyUnkown <- function(unknown, mname){
+  subsetF(unknown, c("obj_id", "batchId", "multi_id", "username", "entry_date", "unkown measurement", mname))
+}
 
 #' simplify qpcr data.frame
 #'
@@ -711,7 +718,7 @@ getFlowcells <- function(from="2014-01-02", to=getToday()){
 #' from <- "2017-01-01"
 #'
 #' @export
-getRequests <- function(group, from="2017-01-01", to=getToday()){
+getRequests <- function(group=NA, from="2017-01-01", to=getToday()){
    r <- FGET("requests/admin", query=list(filter.group=group, filter.submitted_after=from, filter.submitted_before=to))
    sj <- httr::content(r)
    requests <- plyr::rbind.fill(lapply(sj, function(f) {
