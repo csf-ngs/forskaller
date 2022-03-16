@@ -1340,9 +1340,43 @@ stop_if_not_success <- function(response, message="", dostop=TRUE){
 
 
  
+#' get plates 
+#' 
+#' @return //list of plates
+#'
+#' @export
+get_plates_for_request <- function(request_id){
+	r <- FGET(paste("requests/", request_id, "/plates", sep=""))
+    httr::content(r)
+}	
+
+#' plate cell to tibble
+#'
+#' @export
+plate_cell_to_tibble <- function(cell){
+	sid <- if(is.null(cell$sample)){ NA }else{ cell$sample$id }
+	tibble::tibble(row=cell$row, column=cell$column, sample_id=sid)
+}
+
+#' plate row to tibble
+#'
+#' @export
+plate_row_to_tibble <- function(row){
+	cells <- lapply(row$cells, plate_cell_to_tibble) 
+ 	do.call("rbind", cells)
+} 
 
 
-
+#' plate to tibble
+#' sample row column plate
+#'
+#' @export
+plate_layout_to_tibble <- function(plate){
+	rows <- lapply(plate$rows, plate_row_to_tibble)   	
+	tr <- do.call("rbind", rows)
+	tr$plate_type <- plate$type
+	tr
+}
 
 
 
