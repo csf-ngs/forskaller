@@ -1354,7 +1354,7 @@ get_plates_for_request <- function(request_id){
 #'
 #' @export
 plate_cell_to_tibble <- function(cell){
-	sid <- if(is.null(cell$sample)){ NA }else{ cell$sample$id }
+	sid <- if(is.null(cell$sample)){ NA }else{ as.character(cell$sample$id) }
 	tibble::tibble(row=cell$row, column=cell$column, sample_id=sid)
 }
 
